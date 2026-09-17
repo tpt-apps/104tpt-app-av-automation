@@ -1,0 +1,1304 @@
+TPT App AV Automation
+
+1. Product Definition
+
+Product name: TPT AV Automation
+Repository: tpt-app-av-automation
+Product family: TPT Apps
+Category: Programmable automation and orchestration for professional AV, live production, and media-pipeline workflows
+Primary distribution: Offline desktop application with an optional headless automation service/daemon mode
+Secondary interfaces: CLI, local automation service, local API for third-party integration
+Target platforms: Windows first; Linux second (important for headless/rack-mounted deployment); macOS only when the underlying TPT media/control stack is sufficiently mature
+
+1.1 Executive summary
+
+TPT AV Automation is a native, offline-first application that lets professional AV, live-production, and media-operations teams build reliable, testable automations across video, audio, lighting, and control-protocol events without writing code.
+
+The product occupies the space that general-purpose automation tools (Zapier, Node-RED, IFTTT) and general-purpose show-control programming environments (Crestron, Q-SYS, Extron, Bitfocus Companion) do not fully cover:
+
+Automation built specifically for professional AV and media events, with the timing guarantees, protocol coverage, and reliability behaviour that live production and broadcast operations require.
+
+The core proposition is:
+
+WHEN something happens in your AV/media environment,
+IF the right conditions hold,
+THEN run a defined, auditable sequence of actions —
+reliably, offline, and without a programmer in the room.
+
+The application is not a lighting console, not a DAW, not a video switcher, and not a general home-automation hub. It is the orchestration layer that sits above the TPT AV stack and above third-party control-protocol endpoints, and turns event-driven behaviour into a reviewable, versioned, testable asset rather than a pile of ad-hoc scripts or vendor-locked macros.
+
+The application should process and execute automations entirely on the user's local network and local machine by default. No cloud relay is required for an automation to fire.
+
+2. Commercial Objective
+
+The initial product should target professional users and integrators who have a direct operational or financial reason to make AV/media behaviour repeatable and dependable.
+
+Primary customer profiles:
+
+AV systems integrators delivering commissioned installations
+
+Live event production companies
+
+Corporate AV/facilities teams operating meeting rooms, boardrooms, and campuses
+
+Houses of worship running weekly services with volunteer operators
+
+Theatres and performing-arts venues
+
+Higher-education AV/classroom technology teams
+
+Broadcast operations teams running ingest-to-publish pipelines
+
+Post-production facilities with repeatable file-based workflows
+
+Museums and experience/exhibit designers running unattended AV installations
+
+The product should be positioned as professional infrastructure software, priced and supported accordingly, rather than as a consumer smart-home automation tool.
+
+2.1 Initial pricing hypothesis
+
+Pricing is a commercial hypothesis and must be validated before launch.
+
+Suggested initial structure:
+
+Edition
+
+Indicative price
+
+Intended buyer
+
+Standalone
+
+$999
+
+Single room/venue, single operator
+
+Studio
+
+$2,499
+
+Multi-room facility, small integration team
+
+Facility/Enterprise
+
+$4,999+
+
+Multi-site, integrator-managed deployments
+
+Avoid recurring cloud infrastructure costs in the initial product. A perpetual licence should be the default commercial model, consistent with the rest of the TPT Apps family. Optional paid major-version upgrades and support contracts can be introduced later.
+
+2.2 Competitive positioning
+
+Existing categories already address parts of this problem:
+
+General automation platforms (Zapier, Node-RED, Home Assistant, IFTTT) provide flexible trigger/action automation but have little or no native understanding of professional AV/media protocols, timing guarantees, or failure semantics that a live show requires.
+
+Show-control and AV programming environments (Crestron SIMPL, Q-SYS, Extron GlobalScripter, AMX, Bitfocus Companion) provide deep protocol coverage but generally require vendor-specific programming, vendor hardware, or are scoped to button-triggered control-surface actions rather than general condition-based automation across the wider AV/media stack.
+
+Broadcast/media orchestration tools (MAM/PAM systems, workflow engines such as vendor-specific job orchestrators) automate file-based pipelines but do not typically reach into live control-surface protocols (DMX, Art-Net, sACN, OSC) at all.
+
+TPT should therefore not attempt to win merely by adding another trigger/action list. The differentiators should be:
+
+Native Rust implementation with predictable, low-latency execution.
+
+Offline-first, local-network operation with no mandatory cloud relay.
+
+Unified coverage of live control protocols (OSC, MIDI, DMX, Art-Net, sACN, control surfaces) and media-pipeline events (ingest, transcode, QC result, asset arrival) in one rule engine.
+
+Deterministic, versioned, human-readable rule definitions rather than opaque vendor macros.
+
+A first-class simulation/dry-run mode so a rule pack can be validated before being armed on a live show.
+
+Explicit reliability behaviour (watchdog, heartbeat, failover) treated as product features, not afterthoughts.
+
+Vendor-neutral: the same rule engine can drive AV Control endpoints and TPT's own media engines (Kinetix, Cadence) without being tied to one hardware vendor's ecosystem.
+
+Reuse of the same underlying TPT foundation used by TPT Media QC, TPT Media Forensics, and TPT AV Commissioning, so an integrator who already uses those tools gains automation "for free" on top of a stack they already trust.
+
+3. Product Principles
+
+3.1 Offline first, local-network first
+
+All core automation execution must work without internet access.
+
+The application must not require:
+
+cloud message brokers
+
+remote rule storage
+
+remote AI APIs
+
+account creation
+
+telemetry
+
+cloud licensing checks to keep already-armed automations running
+
+Internet connectivity may optionally be used for:
+
+software updates
+
+licence activation
+
+optional remote notification integrations (e.g. sending an alert to an external service), which must be explicitly opt-in per rule
+
+The user must be able to fully disable outbound network access and still run every armed automation.
+
+3.2 Deterministic rule evaluation
+
+Given the same:
+
+rule definition
+
+input event
+
+device/endpoint state
+
+application version
+
+a rule must always produce the same evaluation decision (fire / do not fire) and the same ordered action list.
+
+Non-deterministic elements (timers with jitter, external device responses) must be clearly isolated from the deterministic rule-matching core so that rule logic itself remains testable and reproducible.
+
+3.3 Explain every execution
+
+An automation must never simply report:
+
+RAN
+
+It must record:
+
+which trigger fired and why
+
+which conditions were evaluated and their result
+
+which actions were attempted, in what order
+
+the outcome of each action (success, failure, timeout, skipped)
+
+timestamps for each step
+
+the exact rule version that executed
+
+3.4 Do not hide failure
+
+Action execution must distinguish:
+
+SUCCESS
+
+FAILED
+
+TIMED_OUT
+
+SKIPPED (condition not met)
+
+PARTIAL (some actions in a chain succeeded, some did not)
+
+A partially-failed automation must never be silently reported as a full success.
+
+3.5 Safety before autonomy
+
+Every automation must support a simulation/dry-run mode that evaluates triggers and conditions and logs what actions would have executed, without sending any real control-protocol messages or invoking any real media action.
+
+New or edited rules should default to "disarmed" (simulation-only) until an operator explicitly arms them.
+
+3.6 Engine and presentation are separate
+
+The automation engine must be usable without the desktop GUI.
+
+Architecture:
+
+                 AV Automation Application
+                          |
+             +------------+-------------+
+             |                          |
+          Desktop                    CLI/Service
+             |                          |
+             +------------+-------------+
+                          |
+                  Automation Engine
+                          |
+        +------------------+------------------+
+        |                  |                  |
+     Triggers          Conditions           Actions
+        |                  |                  |
+        +------------------+------------------+
+                          |
+                   Event/Execution Log
+                          |
+              +-----------+-----------+
+              |                       |
+          Interactive              Reports/
+            review                 Export
+
+4. Proposed Repository Structure
+
+tpt-app-av-automation/
+├── Cargo.toml
+├── README.md
+├── LICENSE
+├── CHANGELOG.md
+├── CONTRIBUTING.md
+├── docs/
+│   ├── architecture.md
+│   ├── rule-model.md
+│   ├── trigger-catalogue.md
+│   ├── action-catalogue.md
+│   ├── rule-format.md
+│   ├── reliability.md
+│   └── integrations.md
+├── crates/
+│   ├── tpt-app-av-automation-core/
+│   ├── tpt-app-av-automation-model/
+│   ├── tpt-app-av-automation-triggers/
+│   ├── tpt-app-av-automation-conditions/
+│   ├── tpt-app-av-automation-actions/
+│   ├── tpt-app-av-automation-engine/
+│   ├── tpt-app-av-automation-devices/
+│   ├── tpt-app-av-automation-report/
+│   ├── tpt-app-av-automation-cli/
+│   ├── tpt-app-av-automation-service/
+│   ├── tpt-app-av-automation-tauri/
+│   └── tpt-app-av-automation-test/
+├── rules/
+│   ├── examples/
+│   ├── live-event/
+│   ├── media-pipeline/
+│   └── failover/
+└── tests/
+    ├── fixtures/
+    ├── virtual-devices/
+    ├── integration/
+    └── chaos/
+
+The exact workspace split can be simplified if the project is initially small. The important architectural boundary is between the deterministic rule/engine core and the application shells (desktop, CLI, service) that host it.
+
+5. Foundation Dependencies
+
+The application should reuse TPT foundations rather than reimplement protocol handling or media processing.
+
+5.1 Primary dependencies
+
+tpt-av-control
+
+Primary control-protocol foundation and the main source of live-show triggers and actions.
+
+Responsibilities:
+
+OSC send/receive
+
+MIDI 1.0/2.0 send/receive
+
+DMX output
+
+Art-Net and sACN output
+
+control-surface input handling
+
+device/endpoint abstractions
+
+This crate is the reason the product can credibly claim professional show-control coverage rather than a generic webhook list.
+
+tpt-kinetix
+
+Video pipeline foundation, used for media-side triggers and actions.
+
+Responsibilities:
+
+start/stop/switch of video sources
+
+playback state events (playing, stopped, source lost)
+
+frame-level condition support (black frame, freeze) in combination with tpt-visual
+
+ingest/decode primitives for pipeline-style automations
+
+tpt-cadence
+
+Audio codec/decode foundation supporting audio-side actions and pipeline events.
+
+Responsibilities:
+
+audio decode for pipeline automations
+
+routing-relevant stream information
+
+hand-off of audio packets to tpt-audio/tpt-dsp for level-based triggers
+
+tpt-audio / tpt-dsp
+
+Signal-level trigger foundation.
+
+Candidate functionality used as triggers/conditions:
+
+silence detection
+
+clipping detection
+
+loudness/level thresholds
+
+peak/RMS monitoring
+
+phase/DC offset anomalies
+
+tpt-dsp's real-time-safe, allocation-free design makes it suitable for continuous condition monitoring during a live show without introducing scheduling jitter into the automation engine.
+
+tpt-visual
+
+Visual condition foundation.
+
+Candidate functionality used as triggers/conditions:
+
+black-frame detection
+
+freeze-frame detection
+
+signal-loss detection
+
+basic frame statistics for failover conditions
+
+tpt-av-sync
+
+Timing/synchronisation foundation.
+
+Candidate functionality used as triggers/conditions:
+
+audio/video drift measurement
+
+timestamp discontinuity detection
+
+cross-device timing correlation, useful for multi-display/multi-zone shows
+
+tpt-av-asset
+
+Asset/job/watch-folder foundation, the primary bridge into media-pipeline automation.
+
+Candidate functionality used as triggers/actions:
+
+new-file-arrived triggers (watch folders)
+
+job-completed/job-failed triggers
+
+thumbnail/waveform/proxy generation as actions
+
+resumable background job integration
+
+tpt-av-test
+
+Testing/conformance foundation.
+
+Candidate functionality:
+
+virtual/simulated device fixtures for engine tests
+
+golden rule-pack regression tests
+
+deterministic regression harnesses reused from the other TPT Apps
+
+The commercial application must add product-level rule/trigger/action logic on top of this foundation rather than duplicating protocol or media-decode work that already exists in these crates.
+
+5.2 Relationship to sibling TPT Apps
+
+TPT AV Automation is designed to consume events from, and trigger actions in, the other TPT Apps where useful, without creating a hard dependency:
+
+TPT Media QC can publish a "QC job failed" event that an automation rule can react to (e.g. route the file to a review folder, alert an operator).
+
+TPT Media Forensics can publish a "finding recorded" event usable in the same way.
+
+TPT AV Commissioning can hand off a validated device/endpoint inventory that AV Automation imports as its initial device registry, avoiding duplicate device configuration.
+
+These integrations must be optional and must degrade gracefully (rules simply do not fire) when a sibling application is not installed.
+
+6. Core Domain Model
+
+6.1 Rule
+
+struct Rule {
+    id: RuleId,
+    name: String,
+    description: Option<String>,
+    version: u32,
+    trigger: Trigger,
+    conditions: Vec<Condition>,
+    actions: Vec<ActionStep>,
+    priority: Priority,
+    armed: bool,
+    tags: Vec<String>,
+}
+
+A rule with armed = false is loaded and evaluated but never sends a real action; it only records what would have happened.
+
+6.2 Trigger
+
+enum Trigger {
+    Schedule(ScheduleSpec),
+    ControlMessage(ControlMessageSpec),
+    DeviceState(DeviceStateSpec),
+    SignalCondition(SignalConditionSpec),
+    AssetEvent(AssetEventSpec),
+    JobEvent(JobEventSpec),
+    Manual,
+    Api,
+}
+
+Every trigger implementation must declare which foundation crate(s) it depends on, and must be able to run against a simulated/virtual source for testing.
+
+6.3 Condition
+
+enum ConditionResult {
+    Met,
+    NotMet,
+    Unknown,
+}
+
+trait Condition {
+    fn id(&self) -> ConditionId;
+    fn evaluate(&self, context: &EvaluationContext) -> ConditionResult;
+}
+
+Conditions must distinguish a definite "not met" from "unknown" (e.g. a device that has not yet reported state). A rule must not fire on an Unknown condition unless the rule explicitly opts in to that behaviour.
+
+6.4 Action
+
+enum ActionOutcome {
+    Success,
+    Failed(String),
+    TimedOut,
+    Skipped,
+}
+
+trait Action {
+    fn id(&self) -> ActionId;
+    fn execute(&self, context: &ExecutionContext) -> ActionOutcome;
+    fn simulate(&self, context: &EvaluationContext) -> SimulatedOutcome;
+}
+
+struct ActionStep {
+    action: Box<dyn Action>,
+    on_failure: FailurePolicy,
+    timeout: Duration,
+}
+
+enum FailurePolicy {
+    StopChain,
+    ContinueChain,
+    RunFallback(Vec<ActionStep>),
+}
+
+6.5 Device/Endpoint
+
+struct Device {
+    id: DeviceId,
+    name: String,
+    kind: DeviceKind,
+    protocol: ProtocolBinding,
+    last_seen: Option<SystemTime>,
+    health: DeviceHealth,
+}
+
+enum DeviceHealth {
+    Unknown,
+    Online,
+    Degraded,
+    Offline,
+}
+
+6.6 Execution Event
+
+struct ExecutionEvent {
+    id: ExecutionId,
+    rule_id: RuleId,
+    rule_version: u32,
+    triggered_at: SystemTime,
+    trigger_detail: TriggerDetail,
+    condition_results: Vec<(ConditionId, ConditionResult)>,
+    action_results: Vec<(ActionId, ActionOutcome)>,
+    overall_status: ExecutionStatus,
+    simulated: bool,
+}
+
+enum ExecutionStatus {
+    Success,
+    PartialFailure,
+    Failed,
+    Skipped,
+}
+
+7. Trigger Catalogue
+
+7.1 Time-based triggers
+
+fixed schedule (cron-like expression)
+
+interval
+
+sunrise/sunset-relative (useful for venue lighting)
+
+one-shot scheduled time
+
+7.2 Control-protocol triggers
+
+incoming OSC message matching an address pattern
+
+incoming MIDI message (note, CC, program change, MIDI 2.0 message)
+
+DMX/Art-Net/sACN value change on a monitored channel/universe
+
+control-surface button/fader event
+
+7.3 Device-state triggers
+
+device transitions to Online / Degraded / Offline
+
+device heartbeat missed for a configurable duration
+
+specific device-reported parameter change
+
+7.4 Signal-condition triggers
+
+video signal lost (via tpt-kinetix/tpt-visual)
+
+black frame sustained beyond threshold
+
+freeze frame sustained beyond threshold
+
+audio silence sustained beyond threshold
+
+audio clipping detected
+
+audio/video drift beyond threshold (via tpt-av-sync)
+
+7.5 Media-pipeline triggers
+
+new file detected in a watch folder (via tpt-av-asset)
+
+background job completed / failed
+
+sibling-app event received (QC failed, forensic finding recorded)
+
+7.6 Manual and API triggers
+
+operator-initiated "run now" from the desktop UI
+
+external system call via the local API
+
+CLI-invoked run
+
+8. Action Catalogue
+
+8.1 Control actions
+
+send OSC message
+
+send MIDI message
+
+set DMX channel(s) / recall a DMX scene
+
+send Art-Net/sACN universe update
+
+trigger a control-surface feedback state
+
+8.2 Media actions
+
+start/stop/switch a video source (via tpt-kinetix)
+
+start/stop audio routing (via tpt-cadence)
+
+start a transcode/proxy job (via tpt-av-asset)
+
+move/copy a file to a target folder
+
+8.3 Notification actions
+
+desktop/operator alert
+
+local sound/visual alert
+
+write to an incident log
+
+optional outbound webhook/email (explicitly opt-in, disabled by default)
+
+8.4 Workflow actions
+
+invoke another rule
+
+run an external script or executable in a sandboxed subprocess with a bounded timeout and no elevated privileges by default
+
+wait/delay before continuing the chain
+
+Every action must declare an estimated execution cost and whether it is safe to run concurrently with other actions in the same chain.
+
+9. Rule Definition Format
+
+A rule pack is the central product abstraction, expressed in a human-readable, versioned YAML format.
+
+Example — live event cueing:
+
+name: "Main Hall - Event Start"
+version: 1
+armed: true
+
+trigger:
+  type: schedule
+  at: "18:55"
+  days: [mon, tue, wed, thu, fri]
+
+actions:
+  - type: control.dmx_scene
+    scene: "house-to-half"
+    fade_ms: 3000
+
+  - type: control.osc
+    address: "/projector/1/power"
+    value: 1
+
+  - type: media.audio_route
+    from: "playback-1"
+    to: "main-pa"
+
+policy:
+  on_failure: continue_chain
+
+Example — failover, matching the WHEN/IF/THEN illustration in summary.md:
+
+name: "Main Display Failover"
+version: 1
+armed: true
+
+trigger:
+  type: signal_condition
+  source: "display-1-input"
+  condition: signal_lost
+  sustained_ms: 2000
+
+actions:
+  - type: control.osc
+    address: "/switcher/main/input"
+    value: 2
+
+  - type: notify.operator
+    message: "Main display lost signal. Switched to backup input."
+
+  - type: log.incident
+    severity: high
+
+policy:
+  on_failure: run_fallback
+  fallback:
+    - type: notify.operator
+      message: "Failover action failed. Manual intervention required."
+
+Rule packs must be:
+
+human-readable
+
+versioned
+
+exportable
+
+importable
+
+diffable
+
+testable in simulation mode without side effects
+
+A user must be able to create a working rule without programming, using either the YAML format directly or the visual rule builder described in section 12.
+
+10. Execution Engine
+
+The engine evaluates incoming events against loaded rules and executes matching, armed rules.
+
+Trigger source
+  |
+  v
+Event normalisation
+  |
+  v
+Rule matching (by trigger type)
+  |
+  v
+Condition evaluation
+  |
+  +----> Not met / Unknown --> record Skipped, stop
+  |
+  v
+Priority/conflict resolution
+  |
+  v
+Action chain execution
+  |
+  +----> Simulation mode --> record SimulatedOutcome only
+  |
+  v
+Execution event recorded
+  |
+  +----> UI
+  +----> Log
+  +----> Local API subscribers
+
+10.1 Conflict resolution
+
+When multiple rules match the same event, or when two action chains target the same device concurrently, the engine must apply a deterministic priority order and must never send two conflicting control values to the same endpoint without a defined resolution (last-write-wins by priority, explicit merge, or reject with a logged conflict).
+
+10.2 Cancellation
+
+A running action chain must be cancellable by an operator. Cancellation must stop remaining actions in the chain and record which actions had already executed.
+
+11. Reliability and Failover
+
+Live productions and unattended installations cannot tolerate silent crashes.
+
+Requirements:
+
+a lightweight watchdog process supervises the engine process and restarts it on unexpected exit
+
+devices are heartbeat-monitored; loss of heartbeat is itself a first-class trigger condition
+
+the engine must be able to run headless as a service/daemon, independent of whether the desktop UI is open
+
+automatic failover behaviour (e.g. switch to backup source, alert operator) must be expressible as ordinary rules, so failover logic is visible and testable rather than hard-coded
+
+the engine must persist enough state to resume correctly after a restart mid-show (e.g. do not re-fire a one-shot schedule trigger that already fired)
+
+Example failure/recovery flow:
+
+Engine process
+      |
+      v
+  Unexpected exit
+      |
+      v
+   Watchdog
+      |
+      v
+   Restart
+      |
+      v
+Reload rules + device state
+      |
+      v
+Resume monitoring (no duplicate firing of already-fired one-shot triggers)
+
+12. Desktop UI
+
+Use a native Tauri application.
+
+The UI should have these primary screens.
+
+12.1 Dashboard
+
+Displays:
+
+active rules and their armed/disarmed state
+
+device health summary
+
+recent executions
+
+active/ongoing action chains
+
+overall system status (nominal / degraded / offline devices present)
+
+12.2 Rule Builder
+
+A visual trigger -> condition -> action canvas, backed directly by the same YAML rule format described in section 9 (the canvas is a view onto the YAML, not a separate representation).
+
+TRIGGER              CONDITIONS            ACTIONS
+[Schedule: 18:55] -> [Weekday only]    -> [DMX Scene: house-to-half]
+                                       -> [OSC: projector on]
+                                       -> [Audio route: main-pa]
+
+The builder must support editing the underlying YAML directly for advanced users, and must round-trip cleanly between visual and text representations.
+
+12.3 Device Manager
+
+Show:
+
+device list with health status
+
+protocol/endpoint configuration
+
+last-seen timestamp
+
+manual test/ping action
+
+import from a TPT AV Commissioning device inventory where available
+
+12.4 Execution Log / Timeline
+
+Show:
+
+chronological list of executions
+
+per-execution trigger, condition results, and action outcomes
+
+filter by rule, status, device, time range
+
+jump from a logged execution back to the rule that produced it
+
+12.5 Simulation Mode
+
+Example:
+
+SIMULATION — no live actions were sent
+
+Rule: "Main Display Failover"
+Trigger: signal_condition (display-1-input, signal_lost)
+Conditions: none configured — would have fired
+
+Would execute:
+  1. control.osc /switcher/main/input = 2
+  2. notify.operator "Main display lost signal..."
+  3. log.incident severity=high
+
+The UI must make it obvious, at all times, whether a rule pack is running live or in simulation.
+
+13. CLI and Automation Interface
+
+The CLI must use the same engine as the GUI.
+
+Example:
+
+tpt-av-automation validate \
+  --rules ./rules/main-hall.yaml
+
+tpt-av-automation simulate \
+  --rules ./rules/main-hall.yaml \
+  --event schedule:18:55
+
+tpt-av-automation run \
+  --rules ./rules/main-hall.yaml \
+  --service
+
+Machine-readable result:
+
+{
+  "rule": "Main Hall - Event Start",
+  "status": "success",
+  "actions_executed": 3,
+  "actions_failed": 0
+}
+
+Exit codes:
+
+0 = SUCCESS
+1 = PARTIAL_FAILURE
+2 = FAILED
+3 = SKIPPED
+4 = CONFIGURATION_ERROR
+5 = DEVICE_ERROR
+6 = INTERNAL_ERROR
+
+The exit-code contract must remain stable across versions.
+
+14. Local API
+
+The application may expose an optional localhost-only API for external integration (e.g. a control-surface UI, a venue's own dashboard, or a sibling TPT App).
+
+Default:
+
+127.0.0.1
+
+Never bind externally by default.
+
+Potential endpoints:
+
+POST /rules/:id/arm
+POST /rules/:id/disarm
+POST /rules/:id/run
+GET  /rules
+GET  /devices
+GET  /executions
+GET  /health
+WS   /events
+
+The API should be disabled by default unless explicitly enabled, and should support token-based authentication for any deployment where it is exposed beyond localhost.
+
+15. Persistence
+
+Use SQLite for local application state.
+
+Store:
+
+rule packs and version history
+
+device/endpoint registry
+
+execution history
+
+user preferences
+
+Do not store large media or control-protocol payload dumps inside the application database. Store references and summaries; store raw evidence (e.g. captured control messages for debugging) as separate files referenced by path.
+
+16. Security and Privacy
+
+The application can send commands to physical devices (lighting, displays, audio routers) and can be reachable over a local network via control protocols.
+
+Requirements:
+
+no mandatory network access for local execution
+
+no cloud upload of rule packs or device inventories by default
+
+sandboxed, timeout-bounded execution of any scripted/external-process action
+
+strict validation of inbound control messages before they can trigger a rule
+
+rate limiting/backoff on inbound triggers to prevent a malfunctioning device from flooding the engine
+
+no automatic execution of externally supplied rule packs without explicit user import and review
+
+local API disabled by default; token-based auth when enabled
+
+clear operator-visible distinction between simulation and live execution at all times, to prevent accidental live activation during testing
+
+Because Art-Net, sACN, OSC, and DMX are commonly unauthenticated protocols, the application must treat all inbound control-protocol traffic as untrusted input and validate it defensively.
+
+17. Licensing and Commercial Boundaries
+
+The commercial application should remain separate from the open-source TPT foundation repositories.
+
+Example:
+
+Open source:
+    tpt-av-control
+    tpt-kinetix
+    tpt-cadence
+    tpt-audio
+    tpt-dsp
+    tpt-visual
+    tpt-av-sync
+    tpt-av-asset
+    tpt-av-test
+
+Commercial:
+    tpt-app-av-automation
+
+Do not copy product-specific rule/automation business logic back into the foundation crates unless it is genuinely reusable infrastructure (e.g. a generic protocol fix belongs in tpt-av-control; a specific rule template does not).
+
+18. Testing Strategy
+
+18.1 Unit tests
+
+Every trigger, condition, and action must have:
+
+valid input
+
+invalid input
+
+boundary case
+
+malformed/unexpected input
+
+expected result
+
+18.2 Virtual device tests
+
+Maintain a set of simulated devices and protocol endpoints so the engine can be tested without physical hardware:
+
+virtual-devices/
+├── osc/
+├── midi/
+├── dmx/
+├── artnet/
+├── sacn/
+└── media-sources/
+
+Each virtual device must support fault injection (dropped messages, delayed responses, going offline mid-chain).
+
+18.3 Golden rule-pack tests
+
+Maintain example rule packs with expected execution traces against recorded event sequences, so engine changes cannot silently change existing behaviour.
+
+18.4 Chaos/failover tests
+
+Explicitly test:
+
+device goes offline mid-action-chain
+
+engine process killed mid-execution and restarted via watchdog
+
+conflicting rules firing on the same event
+
+malformed inbound control message
+
+network interruption during action execution
+
+18.5 Fuzzing
+
+Fuzz:
+
+the YAML rule parser
+
+inbound OSC/MIDI/DMX message parsing
+
+the local API request handling
+
+Reuse tpt-av-test where possible.
+
+18.6 Regression tests
+
+Every production bug should produce a permanent regression fixture, consistent with the approach used in the other TPT Apps.
+
+19. MVP
+
+The first commercial MVP should not implement every possible trigger/action/integration.
+
+MVP scope:
+
+Rule engine
+
+deterministic trigger/condition/action evaluation
+
+YAML rule format with versioning
+
+armed/disarmed simulation mode
+
+Triggers
+
+schedule
+
+OSC/MIDI inbound message
+
+DMX/Art-Net/sACN channel change
+
+device online/offline
+
+manual/API-invoked
+
+Actions
+
+OSC send
+
+MIDI send
+
+DMX/Art-Net/sACN output
+
+media start/stop/switch via tpt-kinetix
+
+notify operator
+
+log incident
+
+Reliability
+
+watchdog-supervised headless service mode
+
+device heartbeat monitoring
+
+Interfaces
+
+CLI (validate, simulate, run)
+
+desktop dashboard, rule builder (YAML-backed), device manager, execution log
+
+local API (disabled by default)
+
+This is enough to create a commercially credible product for live-event and simple show-control automation, without yet committing to full media-pipeline orchestration.
+
+20. Post-MVP
+
+Phase 2:
+
+media-pipeline triggers/actions (watch-folder ingest, job completion, sibling-app QC/Forensics events)
+
+full visual rule-builder canvas (not just YAML-backed forms)
+
+richer conflict-resolution and priority tooling
+
+audio/video signal-condition triggers (tpt-visual, tpt-audio/tpt-dsp, tpt-av-sync)
+
+import of device inventory from TPT AV Commissioning
+
+Phase 3:
+
+multi-site/facility orchestration
+
+plugin SDK for third-party device drivers and custom actions
+
+redundant/clustered engine execution for mission-critical installations
+
+richer external integrations (opt-in webhook/notification connectors)
+
+Cloud infrastructure should not be introduced unless customers demonstrate a real need.
+
+21. Product Differentiation Roadmap
+
+Level 1 — Scripted Control
+
+"Can I send a command when a button is pressed?"
+
+Level 2 — Conditional Automation
+
+"Can I react to real AV/media conditions, not just button presses?"
+
+Level 3 — Reliable Automation
+
+"Can this run unattended, every night, without crashing or drifting?"
+
+Level 4 — Explainable Automation
+
+"Can I see exactly why an automation did or did not fire, after the fact?"
+
+Level 5 — Orchestrated Automation
+
+"Can I tie live control, media processing, and file-based pipelines into one coherent system?"
+
+The final level is important for the high-ticket, facility-wide positioning.
+
+22. Commercial Product Packaging
+
+Standalone
+
+single venue/room
+
+full trigger/action catalogue
+
+simulation mode
+
+CLI
+
+one-machine licence
+
+Studio
+
+multiple rooms/zones on one licence
+
+media-pipeline triggers/actions (Phase 2)
+
+priority updates
+
+Facility/Enterprise
+
+multi-site deployment
+
+plugin SDK
+
+redundant execution
+
+central rule-pack distribution
+
+commercial support
+
+Do not build Facility/Enterprise features until there is evidence customers need them.
+
+23. Strategic Product Boundary
+
+Do not turn this into:
+
+a lighting console
+
+a DAW
+
+a video switcher/production switcher
+
+a general home-automation platform
+
+a full BMS/building-management system
+
+It may send control-protocol messages and start/stop media because those are necessary to execute automations. But the product's centre of gravity must remain:
+
+Trigger
+Condition
+Action
+Explain
+Recover
+
+24. Definition of Done
+
+The first release is ready for paid users when:
+
+A user can install the application without development tooling.
+
+A rule pack can be authored in YAML or via the visual builder and validated without errors.
+
+A rule can be armed and disarmed, with the current state always visible in the UI.
+
+Simulation mode never sends a real control message or media action.
+
+The engine can run headless as a supervised service and survive a forced restart without duplicating already-fired one-shot triggers.
+
+OSC, MIDI, and at least one of DMX/Art-Net/sACN can trigger and be triggered by rules end to end.
+
+A media action can start/stop/switch a source via tpt-kinetix.
+
+Device health (online/degraded/offline) is tracked and can itself trigger a rule.
+
+Every execution is logged with trigger detail, condition results, and per-action outcomes.
+
+A partially failed action chain is reported as partial failure, never as full success.
+
+The CLI can validate, simulate, and run the same rule packs as the GUI.
+
+The local API is disabled by default and, when enabled, requires a token.
+
+A malformed inbound control message cannot crash the engine.
+
+Golden rule-pack tests and virtual-device tests cover every MVP trigger and action.
+
+Chaos tests confirm the watchdog restarts the engine after a forced kill.
+
+No internet connection is required for core operation.
+
+A clean-machine installation has been tested.
+
+24.1 Recommended Implementation Order
+
+Establish Cargo workspace and application shell.
+
+Integrate tpt-av-control and enumerate supported protocols.
+
+Implement the device/endpoint registry.
+
+Implement the rule/trigger/condition/action domain model.
+
+Implement the YAML rule-pack parser and validator.
+
+Implement the deterministic evaluation core with virtual-device test support.
+
+Implement simulation mode end to end.
+
+Implement OSC/MIDI/DMX/Art-Net/sACN triggers and actions.
+
+Integrate tpt-kinetix for media start/stop/switch actions.
+
+Implement SQLite persistence for rules, devices, and execution history.
+
+Implement the headless service mode and watchdog supervision.
+
+Implement device heartbeat monitoring and offline/degraded triggers.
+
+Implement the CLI (validate, simulate, run).
+
+Implement the desktop dashboard and execution log viewer.
+
+Implement the YAML-backed visual rule builder.
+
+Implement the local API (disabled by default).
+
+Add virtual-device and golden rule-pack test suites.
+
+Add chaos/failover tests (kill-and-restart, device dropout, conflicting rules).
+
+Add fuzzing for the rule parser and inbound protocol handling.
+
+Benchmark and profile under sustained live-event-like event load.
+
+Harden error handling and failure isolation.
+
+Package Windows release; validate headless Linux service deployment.
+
+Run a private beta with a real venue or integrator.
+
+Only then expand into Phase 2 media-pipeline triggers/actions.
+
+25. Strategic Constraint
+
+Do not attempt to match every feature of Crestron/Q-SYS programming environments or general-purpose automation platforms on version 1.
+
+Those ecosystems have years of hardware-specific integrations and IDE tooling. TPT's first advantage should instead be:
+
+A modern, offline-first, explainable automation engine that unifies live control-protocol automation and media-pipeline automation in one deterministic, testable rule format — something neither the show-control vendors nor the general automation platforms currently offer together.
+
+Then use the open TPT AV foundation, and the growing family of TPT Apps built on it, to expand protocol and integration coverage rapidly. The commercial application should be the place where triggers, conditions, and actions across the whole TPT AV stack become one coherent, reliable automation product.

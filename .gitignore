@@ -1,0 +1,16 @@
+/target/
+**/*.rs.bk
+*.pdb
+
+.DS_Store
+Thumbs.db
+
+*.log
+*.tmp
+
+.vscode/
+.idea/
+*.iml
+
+.env
+.env.local
