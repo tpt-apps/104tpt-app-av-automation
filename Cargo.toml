@@ -1,0 +1,72 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/tpt-app-av-automation-core",
+    "crates/tpt-app-av-automation-model",
+    "crates/tpt-app-av-automation-triggers",
+    "crates/tpt-app-av-automation-conditions",
+    "crates/tpt-app-av-automation-actions",
+    "crates/tpt-app-av-automation-devices",
+    "crates/tpt-app-av-automation-engine",
+    "crates/tpt-app-av-automation-report",
+    "crates/tpt-app-av-automation-test",
+    "crates/tpt-app-av-automation-service",
+    "crates/tpt-app-av-automation-cli",
+]
+
+# The Tauri desktop shell is not part of the default workspace build because it
+# requires the Tauri CLI and a webview toolchain on every developer machine.
+# It is scaffolded as its own manifest and excluded here; add it back with
+# `cargo build --manifest-path crates/tpt-app-av-automation-tauri/Cargo.toml`
+# once the desktop shell work (spec.txt §12) begins.
+exclude = [
+    "crates/tpt-app-av-automation-tauri",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.82"
+license = "MIT OR Apache-2.0"
+authors = ["TPT Solutions"]
+repository = "https://github.com/tpt-apps/104tpt-app-av-automation"
+homepage = "https://opensource.tptsolutions.co.nz/"
+readme = "README.md"
+
+[workspace.dependencies]
+# Internal crates
+tpt-app-av-automation-core = { path = "crates/tpt-app-av-automation-core", version = "0.1.0" }
+tpt-app-av-automation-model = { path = "crates/tpt-app-av-automation-model", version = "0.1.0" }
+tpt-app-av-automation-triggers = { path = "crates/tpt-app-av-automation-triggers", version = "0.1.0" }
+tpt-app-av-automation-conditions = { path = "crates/tpt-app-av-automation-conditions", version = "0.1.0" }
+tpt-app-av-automation-actions = { path = "crates/tpt-app-av-automation-actions", version = "0.1.0" }
+tpt-app-av-automation-devices = { path = "crates/tpt-app-av-automation-devices", version = "0.1.0" }
+tpt-app-av-automation-engine = { path = "crates/tpt-app-av-automation-engine", version = "0.1.0" }
+tpt-app-av-automation-report = { path = "crates/tpt-app-av-automation-report", version = "0.1.0" }
+tpt-app-av-automation-test = { path = "crates/tpt-app-av-automation-test", version = "0.1.0" }
+tpt-app-av-automation-service = { path = "crates/tpt-app-av-automation-service", version = "0.1.0" }
+
+# Open TPT AV foundation crates (open source, separate repositories).
+# Path dependencies for local development; `version` is supplied so the
+# crates can also be consumed from a registry without edits.
+tpt-av-control-osc = { path = "../tpt-av-control/tpt-av-control-osc", version = "0.1.0" }
+tpt-av-control-midi = { path = "../tpt-av-control/tpt-av-control-midi", version = "0.1.0" }
+tpt-av-control-dmx = { path = "../tpt-av-control/tpt-av-control-dmx", version = "0.1.0" }
+tpt-av-control-utils = { path = "../tpt-av-control/tpt-av-control-utils", version = "0.1.0" }
+
+# Third party
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_yaml = "0.9"
+thiserror = "2.0"
+anyhow = "1.0"
+clap = { version = "4", features = ["derive"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+rusqlite = { version = "0.32", features = ["bundled"] }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true

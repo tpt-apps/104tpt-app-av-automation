@@ -1,0 +1,24 @@
+[package]
+name = "tpt-app-av-automation-triggers"
+description = "Trigger sources: normalizes inbound control traffic into deterministic `Event`s (spec §7)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme = "README.md"
+
+[dependencies]
+tpt-app-av-automation-core = { workspace = true }
+tpt-app-av-automation-model = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+

@@ -1,0 +1,27 @@
+[package]
+name = "tpt-app-av-automation-actions"
+description = "Action executors and the outbound transport abstraction (spec §6.4, §8)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme = "README.md"
+
+[dependencies]
+tpt-app-av-automation-core = { workspace = true }
+tpt-app-av-automation-model = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+tpt-av-control-osc = { workspace = true }
+tpt-av-control-midi = { workspace = true }
+tpt-av-control-dmx = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+
