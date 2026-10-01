@@ -19,5 +19,5 @@ mod time;
 pub use error::{Diagnostic, Error, Result, Severity};
 pub use event::{DeviceHealth, DmxLevel, Event, MidiLevel, Protocol};
 pub use ids::{ActionId, ConditionId, DeviceId, ExecutionId, RuleId, slugify_rule_id};
-pub use rate_limit::RateLimiter;
+pub use rate_limit::{BackoffPolicy, RateLimiter};
 pub use time::{Clock, FixedClock, SystemClock, Timestamp};

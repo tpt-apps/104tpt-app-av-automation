@@ -31,7 +31,7 @@ pub struct DeviceConfig {
     /// Category.
     #[serde(default)]
     pub kind: DeviceKind,
-    /// `osc`, `artnet`, `sacn`, `midi` or `virtual`.
+    /// `osc`, `artnet`, `sacn`, `midi`, `ump` or `virtual`.
     pub protocol: String,
     /// `host:port` for network protocols, or (part of) the MIDI port name.
     #[serde(default)]
@@ -66,7 +66,7 @@ pub struct DeviceFile {
     pub devices: Vec<DeviceConfig>,
 }
 
-const PROTOCOLS: [&str; 5] = ["osc", "artnet", "sacn", "midi", "virtual"];
+const PROTOCOLS: [&str; 6] = ["osc", "artnet", "sacn", "midi", "ump", "virtual"];
 
 impl DeviceFile {
     /// Parses YAML; a malformed document is a parse error, never a panic.
@@ -101,7 +101,7 @@ impl DeviceFile {
                     format!("unknown protocol `{}`; expected one of: {}", d.protocol, PROTOCOLS.join(", ")),
                 ));
             }
-            if matches!(d.protocol.as_str(), "osc" | "artnet" | "sacn") && d.address.is_none() {
+            if matches!(d.protocol.as_str(), "osc" | "artnet" | "sacn" | "ump") && d.address.is_none() {
                 out.push(Diagnostic::error(
                     format!("{loc}.address"),
                     format!("`{}` devices need a host:port address", d.protocol),

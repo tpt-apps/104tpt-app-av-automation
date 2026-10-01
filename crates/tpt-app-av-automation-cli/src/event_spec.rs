@@ -15,7 +15,9 @@
 use std::collections::HashMap;
 
 use tpt_app_av_automation_core::{DeviceHealth, DmxLevel, Error, Event, MidiLevel, Result};
-use tpt_app_av_automation_model::{LocalTime, RulePack, TriggerSpec, Weekday};
+use tpt_app_av_automation_model::{
+    LocalTime, MidiMessageKind, RulePack, TriggerSpec, Weekday,
+};
 
 /// One-line usage summary, appended to parse errors.
 pub const USAGE: &str = "expected one of: schedule:HH:MM[@day], osc:/address[=v1,v2], \
@@ -30,6 +32,27 @@ fn number<T: std::str::FromStr>(spec: &str, text: &str, what: &str) -> Result<T>
     text.trim()
         .parse()
         .map_err(|_| bad(spec, &format!("`{text}` is not a valid {what}")))
+}
+
+/// Resolves a `--event` MIDI message kind, including the MIDI 2.0-only kinds.
+fn midi_kind(spec: &str, text: &str) -> Result<&'static str> {
+    MidiMessageKind::ALL
+        .into_iter()
+        .find(|k| k.as_str() == text)
+        .map(MidiMessageKind::as_str)
+        .ok_or_else(|| {
+            bad(
+                spec,
+                &format!(
+                    "unknown MIDI message kind `{text}`; expected one of: {}",
+                    MidiMessageKind::ALL
+                        .iter()
+                        .map(|k| k.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+            )
+        })
 }
 
 /// The local time a schedule event refers to, for pinning the simulation clock.
@@ -95,19 +118,30 @@ pub fn parse_event(spec: &str, pack: &RulePack) -> Result<Vec<Event>> {
         }
         "midi" => {
             let parts: Vec<&str> = rest.split(':').collect();
-            if !(3..=4).contains(&parts.len()) {
-                return Err(bad(spec, "expected midi:kind:channel:number[:value]"));
+            if !(3..=5).contains(&parts.len()) {
+                return Err(bad(spec, "expected midi:kind:channel:number[:value][:group]"));
             }
-            if !matches!(parts[0], "note_on" | "note_off" | "cc" | "program_change") {
-                return Err(bad(spec, "kind must be note_on, note_off, cc or program_change"));
-            }
+            let kind = midi_kind(spec, parts[0])?;
+            let message_number = number::<u8>(spec, parts[2], "number")?;
+            let raw_value = match parts.get(3) {
+                Some(v) => number::<u32>(spec, v, "value")?,
+                None => 0,
+            };
+            // A value above 0xFFFF is MIDI 2.0-only and is reported both narrowed and in full.
+            let value32 = (raw_value > u32::from(u16::MAX)).then_some(raw_value);
+            let value = match value32 {
+                Some(v) => (v >> 16) as u16,
+                None => raw_value as u16,
+            };
             Ok(vec![Event::Midi(MidiLevel {
-                kind: parts[0].to_owned(),
-                channel: number(spec, parts[1], "channel")?,
-                number: number(spec, parts[2], "number")?,
-                value: match parts.get(3) {
-                    Some(v) => number(spec, v, "value")?,
-                    None => 0,
+                kind: kind.to_string(),
+                channel: number::<u8>(spec, parts[1], "channel")?,
+                number: message_number,
+                value,
+                value32,
+                group: match parts.get(4) {
+                    Some(g) => Some(number::<u8>(spec, g, "group")?),
+                    None => None,
                 },
             })])
         }
@@ -256,7 +290,8 @@ rules:
                 channel: 0,
                 kind: "note_on".into(),
                 number: 60,
-                value: 127
+                value: 127,
+                ..Default::default()
             })]
         );
         assert_eq!(
@@ -325,4 +360,34 @@ rules:
             assert!(err.to_string().contains("expected one of"), "{bad}: {err}");
         }
     }
+    #[test]
+    fn midi2_events_can_be_simulated_from_the_command_line() {
+        // A 32-bit MIDI 2.0 value, with the UMP group.
+        assert_eq!(
+            parse("midi:cc:1:7:305419896:2").unwrap(),
+            vec![Event::Midi(MidiLevel {
+                channel: 1,
+                kind: "cc".into(),
+                number: 7,
+                value: 0x1234,
+                value32: Some(0x1234_5678),
+                group: Some(2),
+            })]
+        );
+        // A MIDI 2.0-only kind.
+        assert_eq!(
+            parse("midi:per_note_rcc:0:60:10").unwrap(),
+            vec![Event::Midi(MidiLevel {
+                channel: 0,
+                kind: "per_note_rcc".into(),
+                number: 60,
+                value: 10,
+                value32: None,
+                group: None,
+            })]
+        );
+        assert!(parse("midi:bogus:0:1:2").is_err());
+        assert!(parse("midi:cc:0:1:2:99").is_ok(), "group is not range-checked here");
+    }
 }
+

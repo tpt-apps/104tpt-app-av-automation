@@ -19,8 +19,13 @@ members = [
 # It is scaffolded as its own manifest and excluded here; add it back with
 # `cargo build --manifest-path crates/tpt-app-av-automation-tauri/Cargo.toml`
 # once the desktop shell work (spec.txt §12) begins.
+#
+# `fuzz/` is excluded for a different reason: coverage-guided fuzz targets require a
+# nightly toolchain (libfuzzer), so they must not be built by `cargo build` or `cargo test`
+# on stable. Build them with `cargo +nightly fuzz run <target>` (spec.txt §18.5).
 exclude = [
     "crates/tpt-app-av-automation-tauri",
+    "fuzz",
 ]
 
 [workspace.package]

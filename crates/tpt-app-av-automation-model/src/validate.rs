@@ -20,6 +20,7 @@ use std::collections::HashSet;
 use tpt_app_av_automation_core::{Diagnostic, Error, Result};
 
 use crate::condition::ConditionSpec;
+use crate::cron::CronSchedule;
 use crate::pack::{FORMAT_VERSION, RulePack};
 use crate::rule::Rule;
 use crate::trigger::{DmxComparison, TriggerSpec};
@@ -169,11 +170,33 @@ fn validate_rule(rule: &Rule, base: &str, diagnostics: &mut Vec<Diagnostic>) {
 fn validate_trigger(trigger: &crate::Trigger, loc: &str, diagnostics: &mut Vec<Diagnostic>) {
     match &trigger.spec {
         TriggerSpec::Schedule(spec) => {
-            if spec.at.is_none() && spec.interval_ms.is_none() {
+            let forms = usize::from(spec.at.is_some())
+                + usize::from(spec.cron.is_some())
+                + usize::from(spec.interval_ms.is_some());
+            if forms == 0 {
                 diagnostics.push(Diagnostic::error(
                     loc,
-                    "schedule trigger needs either `at` or `interval_ms`",
+                    "schedule trigger needs one of `at`, `cron` or `interval_ms`",
                 ));
+            } else if forms > 1 {
+                diagnostics.push(Diagnostic::error(
+                    loc,
+                    "schedule trigger must use exactly one of `at`, `cron` or `interval_ms`",
+                ));
+            }
+            if let Some(expression) = &spec.cron {
+                if let Err(e) = CronSchedule::parse(expression) {
+                    diagnostics.push(Diagnostic::error(
+                        format!("{loc}.cron"),
+                        e.to_string(),
+                    ));
+                }
+                if !spec.days.is_empty() {
+                    diagnostics.push(Diagnostic::error(
+                        format!("{loc}.days"),
+                        "`days` cannot be combined with `cron`; use the expression's day-of-week field",
+                    ));
+                }
             }
             if let Some(interval) = spec.interval_ms {
                 if interval == 0 {
@@ -188,16 +211,10 @@ fn validate_trigger(trigger: &crate::Trigger, loc: &str, diagnostics: &mut Vec<D
                     ));
                 }
             }
-            if spec.at.is_some() && spec.interval_ms.is_some() {
-                diagnostics.push(Diagnostic::error(
-                    loc,
-                    "schedule trigger cannot set both `at` and `interval_ms`",
-                ));
-            }
-            if spec.once && spec.at.is_none() {
+            if spec.once && spec.at.is_none() && spec.cron.is_none() {
                 diagnostics.push(Diagnostic::error(
                     format!("{loc}.once"),
-                    "`once` requires a fixed `at` time",
+                    "`once` requires a fixed `at` time or a `cron` expression",
                 ));
             }
         }
@@ -219,7 +236,12 @@ fn validate_trigger(trigger: &crate::Trigger, loc: &str, diagnostics: &mut Vec<D
                 ));
             }
         }
-        TriggerSpec::Midi { channel, number, .. } => {
+        TriggerSpec::Midi {
+            channel,
+            number,
+            group,
+            ..
+        } => {
             if channel.is_some_and(|c| c > 15) {
                 diagnostics.push(Diagnostic::error(
                     format!("{loc}.channel"),
@@ -230,6 +252,12 @@ fn validate_trigger(trigger: &crate::Trigger, loc: &str, diagnostics: &mut Vec<D
                 diagnostics.push(Diagnostic::error(
                     format!("{loc}.number"),
                     "MIDI number must be 0-127",
+                ));
+            }
+            if group.is_some_and(|g| g > 15) {
+                diagnostics.push(Diagnostic::error(
+                    format!("{loc}.group"),
+                    "UMP group must be 0-15",
                 ));
             }
         }

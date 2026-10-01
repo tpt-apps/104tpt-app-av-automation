@@ -1,0 +1,116 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  # Linux is the reference platform for the headless service and the only platform where
+  # coverage-guided fuzzing can run: Rust ships no AddressSanitizer runtime for
+  # `x86_64-pc-windows-msvc`, so `cargo fuzz` cannot link there (spec §11, §18.5).
+  linux:
+    name: Linux (stable)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Format
+        run: cargo fmt --all --check
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      # Spec §11: the service must run headless on Linux, so the systemd unit is
+      # smoke-tested for syntax rather than merely committed.
+      - name: Validate systemd unit
+        run: systemd-analyze verify scripts/tpt-av-automation.service
+
+      - name: Test
+        run: cargo test --workspace --locked
+
+  fuzz:
+    name: Fuzz (nightly, ASan)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build fuzz targets
+        run: cargo +nightly fuzz build
+
+      # A short budget per target: enough to catch a shallow panic on every push, while
+      # the long-running campaigns are a separate scheduled job.
+      - name: Fuzz rule-pack parser
+        run: cargo +nightly fuzz run rule-pack -- -max_total_time=120 -rss_limit_mb=4096
+
+      - name: Fuzz inbound OSC
+        run: cargo +nightly fuzz run inbound-osc -- -max_total_time=120 -rss_limit_mb=4096
+
+      - name: Fuzz inbound MIDI
+        run: cargo +nightly fuzz run inbound-midi -- -max_total_time=120 -rss_limit_mb=4096
+
+      - name: Fuzz inbound Art-Net/sACN
+        run: cargo +nightly fuzz run inbound-dmx -- -max_total_time=120 -rss_limit_mb=4096
+
+      - name: Fuzz local API requests
+        run: cargo +nightly fuzz run api-request -- -max_total_time=120 -rss_limit_mb=4096
+
+      # A crash leaves an artifact; surface it in the run log and as a downloadable file.
+      - name: Upload crash artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-crashes
+          path: fuzz/artifacts/
+          if-no-files-found: ignore
+
+  windows:
+    name: Windows (stable)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Test
+        run: cargo test --workspace --locked
+
+      # Confirms the packaged binary runs on a machine with no Rust toolchain (spec §24).
+      - name: Package and smoke-test release
+        shell: pwsh
+        run: ./scripts/package-windows.ps1
+
+  # Deeper fuzz campaigns for the parser surfaces that carry the most risk in a live show.
+  # Scheduled rather than per-push because each run is measured in hours.
+  fuzz-nightly:
+    name: Fuzz (nightly campaign)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+      - name: Long fuzz campaign
+        run: |
+          cargo +nightly fuzz run rule-pack -- -max_total_time=1800 -rss_limit_mb=4096
+          cargo +nightly fuzz run api-request -- -max_total_time=1800 -rss_limit_mb=4096
+      - name: Upload crash artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-crashes-nightly
+          path: fuzz/artifacts/
+          if-no-files-found: ignore

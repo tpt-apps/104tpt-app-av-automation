@@ -131,21 +131,22 @@ fn rules_load_disarmed_by_default() {
 #[test]
 fn schedule_matching_is_deterministic_and_idempotent_within_the_minute() {
     let spec = ScheduleSpec::daily(LocalTime::new(18, 55).unwrap());
-    let event = Event::Schedule {
-        spec: spec.label(),
-    };
+    let event = Event::Schedule { spec: spec.label() };
     let trigger = Trigger::new(TriggerSpec::Schedule(spec));
 
     assert!(trigger.matches(&event));
     // The same question asked twice gives the same answer.
     assert!(trigger.matches(&event));
-    assert!(!trigger.matches(&Event::Schedule { spec: "18:56".into() }));
+    assert!(!trigger.matches(&Event::Schedule {
+        spec: "18:56".into()
+    }));
 }
 
 #[test]
 fn weekday_gating_is_applied() {
     let spec = ScheduleSpec {
         at: LocalTime::new(9, 0),
+        cron: None,
         interval_ms: None,
         days: vec![Weekday::Sat, Weekday::Sun],
         once: false,
@@ -199,6 +200,7 @@ fn midi_trigger_matches_normalized_messages() {
         channel: Some(0),
         number: Some(60),
         value: Some(127),
+        group: None,
     });
 
     assert!(trigger.matches(&Event::Midi(MidiLevel {
@@ -206,18 +208,21 @@ fn midi_trigger_matches_normalized_messages() {
         kind: "note_on".into(),
         number: 60,
         value: 127,
+        ..Default::default()
     })));
     assert!(!trigger.matches(&Event::Midi(MidiLevel {
         channel: 1,
         kind: "note_on".into(),
         number: 60,
         value: 127,
+        ..Default::default()
     })));
     assert!(!trigger.matches(&Event::Midi(MidiLevel {
         channel: 0,
         kind: "note_off".into(),
         number: 60,
         value: 0,
+        ..Default::default()
     })));
 }
 
@@ -476,7 +481,9 @@ rules:
 "#;
     let diagnostics = expect_invalid(yaml);
     assert!(
-        diagnostics.iter().any(|d| d.message.contains("forms a cycle")),
+        diagnostics
+            .iter()
+            .any(|d| d.message.contains("forms a cycle")),
         "{diagnostics:?}"
     );
 }
@@ -514,7 +521,6 @@ revision: 1
 action_library:
   blackout:
     type: control.dmx_channels
-    device: rack
     universe: 1
     start_channel: 0
     values: [0]
@@ -526,6 +532,7 @@ rules:
       - id: step
         type: workflow.use_action
         library: blackout
+        device: rack
 "#;
     let pack = RulePack::from_yaml_str(yaml).expect("library pack should validate");
     let resolved = pack.rules[0].actions[0]
@@ -620,4 +627,392 @@ fn next(state: &mut u64) -> u64 {
     *state ^= *state >> 7;
     *state ^= *state << 17;
     *state
+}
+/// A mistyped key must be a hard error, never a silently ignored instruction (spec §9).
+///
+/// A rule pack is loaded once, before a show, and a silently dropped key means the operator
+/// believes a cue is armed when the engine is doing something else entirely.
+#[test]
+fn mistyped_keys_are_rejected_at_every_level() {
+    let cases: [(&str, &str, &str); 5] = [
+        (
+            "pack level",
+            "unknown field `revison`",
+            "format_version: 1\nname: P\nrevison: 1\nrules: []\n",
+        ),
+        (
+            "rule level",
+            "unknown field `arrmed`",
+            "format_version: 1\nname: P\nrevision: 1\nrules:\n  - id: r\n    name: R\n    trigger: { type: manual }\n    arrmed: true\n    actions: [{ id: a, type: notify.operator, message: m }]\n",
+        ),
+        (
+            "condition level",
+            "unknown field `dev`",
+            "format_version: 1\nname: P\nrevision: 1\nrules:\n  - id: r\n    name: R\n    trigger: { type: manual }\n    conditions: [{ id: c, type: rule_armed, rule: x, dev: typo }]\n    actions: [{ id: a, type: notify.operator, message: m }]\n",
+        ),
+        (
+            "action level",
+            "unknown field `mesage`",
+            "format_version: 1\nname: P\nrevision: 1\nrules:\n  - id: r\n    name: R\n    trigger: { type: manual }\n    actions: [{ id: a, type: notify.operator, mesage: typo }]\n",
+        ),
+        (
+            // A unit trigger variant has no field list for serde to check against, so this case is
+            // caught by the pack-level raw-YAML audit rather than by `deny_unknown_fields`.
+            "unit-variant trigger",
+            "unknown field `evnt`",
+            "format_version: 1\nname: P\nrevision: 1\nrules:\n  - id: r\n    name: R\n    trigger: { type: manual, evnt: typo }\n    actions: [{ id: a, type: notify.operator, message: m }]\n",
+        ),
+    ];
+
+    for (level, expected, yaml) in cases {
+        let error = RulePack::from_yaml_str(yaml)
+            .err()
+            .unwrap_or_else(|| panic!("{level}: a mistyped key was silently accepted"));
+        assert!(
+            error.to_string().contains(expected),
+            "{level}: expected {expected:?} in {error}"
+        );
+    }
+}
+
+/// Strictness must not reject the keys a valid pack legitimately uses (spec §9).
+///
+/// This guards the `deny_unknown_fields` / `flatten` interaction: `Trigger`, `Condition` and
+/// `ActionStep` all flatten a tagged enum, so making the wrappers strict would break valid input.
+#[test]
+fn legitimate_keys_are_still_accepted_at_every_level() {
+    let pack = RulePack::from_yaml_str(VALID_PACK).expect("the canonical pack must stay valid");
+    assert_eq!(pack.rules.len(), 1);
+
+    // A pack exercising every wrapper that flattens a strict enum.
+    let yaml = r#"
+format_version: 1
+name: Flatten
+revision: 1
+action_library:
+  blackout:
+    type: control.dmx_channels
+    universe: 1
+    start_channel: 0
+    values: [0]
+rules:
+  - id: r1
+    name: Wrapper Keys
+    trigger: { type: dmx, universe: 1, channel: 4, comparison: crossed_above, value: 100, dmx_previous: 0 }
+    conditions:
+      - id: c1
+        type: time_window
+        from: "18:00"
+        to: "23:00"
+        fire_on_unknown: true
+    actions:
+      - id: a1
+        type: workflow.use_action
+        library: blackout
+        device: rack
+        timeout_ms: 500
+        concurrent_safe: true
+        estimated_cost_ms: 20
+"#;
+    RulePack::from_yaml_str(yaml).expect("wrapper-level keys must remain valid");
+
+    // Round-tripping re-serializes exactly these keys, so it must survive strict parsing too.
+    let reserialized = pack.to_yaml_string().unwrap();
+    RulePack::from_yaml_str(&reserialized).expect("a re-serialized pack must re-parse");
+}
+
+/// A library fragment is a bare action; its target device belongs on the calling step.
+///
+/// This pins the `device` placement that the strictness fix surfaced: `device` inside
+/// `action_library` used to be dropped without complaint, leaving a fragment with no target.
+#[test]
+fn a_library_fragment_may_not_smuggle_a_device_target() {
+    let yaml = r#"
+format_version: 1
+name: Fragment Device
+revision: 1
+action_library:
+  blackout:
+    type: control.dmx_channels
+    device: rack
+    universe: 1
+    start_channel: 0
+    values: [0]
+rules:
+  - id: r1
+    name: All Black
+    trigger: { type: manual }
+    actions:
+      - id: step
+        type: workflow.use_action
+        library: blackout
+        device: rack
+"#;
+    let error =
+        RulePack::from_yaml_str(yaml).expect_err("a device inside a fragment must be rejected");
+    assert!(
+        error.to_string().contains("unknown field `device`"),
+        "{error}"
+    );
+}
+
+/// A pack whose only schedule trigger uses a cron expression.
+fn cron_pack(expression: &str) -> String {
+    format!(
+        r#"
+format_version: 1
+name: Cron Pack
+revision: 1
+rules:
+  - id: hourly-cue
+    name: Hourly cue
+    trigger:
+      type: schedule
+      cron: "{expression}"
+    actions:
+      - id: log
+        type: log.incident
+        message: "cue"
+"#
+    )
+}
+
+#[test]
+fn a_cron_schedule_parses_and_validates() {
+    let pack = RulePack::from_yaml_str(&cron_pack("30 18 * * mon-fri")).expect("valid cron");
+    match &pack.rules[0].trigger.spec {
+        TriggerSpec::Schedule(spec) => {
+            assert_eq!(spec.cron.as_deref(), Some("30 18 * * mon-fri"));
+            assert!(spec.at.is_none());
+            assert!(spec.interval_ms.is_none());
+            assert!(spec.parsed_cron().is_some());
+            // The label is canonical, so execution records are stable.
+            assert_eq!(spec.label(), "cron 30 18 * * 1-5");
+        }
+        other => panic!("expected a schedule trigger, got {other:?}"),
+    }
+}
+
+#[test]
+fn a_cron_schedule_round_trips_through_yaml() {
+    let pack = RulePack::from_yaml_str(&cron_pack("*/15 8-20 * * mon-fri")).unwrap();
+    let yaml = pack.to_yaml_string().unwrap();
+    assert!(yaml.contains("cron:"), "{yaml}");
+    assert_eq!(pack, RulePack::from_yaml_str(&yaml).unwrap());
+}
+
+#[test]
+fn a_malformed_cron_expression_is_a_located_validation_error() {
+    let diags = expect_invalid(&cron_pack("99 * * * *"));
+    let cron = diags
+        .iter()
+        .find(|d| d.location.ends_with(".cron"))
+        .unwrap_or_else(|| panic!("expected a diagnostic on .cron, got {diags:?}"));
+    assert!(cron.message.contains("minute"), "{}", cron.message);
+}
+
+#[test]
+fn a_schedule_must_use_exactly_one_of_at_cron_and_interval() {
+    let locations: Vec<String> = expect_invalid(&cron_pack("30 18 * * mon-fri"))
+        .into_iter()
+        .map(|d| d.location)
+        .collect();
+    assert!(locations.is_empty(), "{locations:?}");
+
+    let none: Vec<String> = expect_invalid(
+        r#"
+format_version: 1
+name: No Schedule
+revision: 1
+rules:
+  - id: r1
+    name: No schedule body
+    trigger: { type: schedule }
+    actions:
+      - { id: log, type: log.incident, message: "x" }
+"#,
+    )
+    .into_iter()
+    .map(|d| d.location)
+    .collect();
+    assert!(
+        none.iter().any(|l| l.ends_with("rules[0].trigger")),
+        "{none:?}"
+    );
+
+    let both: Vec<Diagnostic> = expect_invalid(
+        r#"
+format_version: 1
+name: Both
+revision: 1
+rules:
+  - id: r1
+    name: at and cron
+    trigger: { type: schedule, at: "18:55", cron: "55 18 * * *" }
+    actions:
+      - { id: log, type: log.incident, message: "x" }
+"#,
+    );
+    assert!(
+        both.iter().any(|d| d.message.contains("exactly one")),
+        "{both:?}"
+    );
+}
+
+#[test]
+fn cron_and_days_cannot_both_be_given() {
+    let diags = expect_invalid(
+        r#"
+format_version: 1
+name: Cron Days
+revision: 1
+rules:
+  - id: r1
+    name: cron with days
+    trigger: { type: schedule, cron: "55 18 * * *", days: [mon] }
+    actions:
+      - { id: log, type: log.incident, message: "x" }
+"#,
+    );
+    assert!(
+        diags.iter().any(|d| d.location.ends_with(".days")),
+        "{diags:?}"
+    );
+}
+
+#[test]
+fn a_cron_matching_is_deterministic_across_repeated_polls() {
+    let spec = ScheduleSpec::cron("0 9 * * mon");
+    let trigger = Trigger::new(TriggerSpec::Schedule(spec.clone()));
+    let event = Event::Schedule {
+        spec: spec.label(),
+    };
+    // 2024-01-01 was a Monday, so 09:00 matches.
+    assert!(trigger.matches(&Event::Schedule {
+        spec: "cron 0 9 * * 1".into()
+    }));
+    assert!(trigger.matches(&event));
+    assert!(trigger.matches(&event), "matching is a pure function of the event");
+    assert!(!trigger.matches(&Event::Schedule {
+        spec: "cron 0 10 * * 1".into()
+    }));
+}
+
+#[test]
+fn every_midi_message_kind_round_trips_through_the_rule_format() {
+    for kind in MidiMessageKind::ALL {
+        let name = match kind {
+            MidiMessageKind::ControlChange => "control_change",
+            other => other.as_str(),
+        };
+        let yaml = format!(
+            r#"
+format_version: 1
+name: Kinds
+revision: 1
+rules:
+  - id: r1
+    name: kind {name}
+    trigger: {{ type: midi, message: {name} }}
+    actions:
+      - {{ id: log, type: log.incident, message: "x" }}
+"#
+        );
+        let diags = expect_invalid(&yaml);
+        assert!(diags.is_empty(), "{name}: {diags:?}");
+    }
+}
+
+#[test]
+fn midi2_only_kinds_are_flagged_as_such() {
+    assert!(!MidiMessageKind::NoteOn.is_midi2_only());
+    assert!(!MidiMessageKind::ControlChange.is_midi2_only());
+    assert!(MidiMessageKind::PerNoteRcc.is_midi2_only());
+    assert!(MidiMessageKind::ChannelPressure.is_midi2_only());
+    assert_eq!(
+        MidiMessageKind::ALL.len(),
+        MidiMessageKind::ALL.iter().filter(|k| !k.is_midi2_only()).count()
+            + MidiMessageKind::ALL.iter().filter(|k| k.is_midi2_only()).count()
+    );
+    // The event discriminator for a control change is `cc`, matching a MIDI 1.0 observation.
+    assert_eq!(MidiMessageKind::ControlChange.as_str(), "cc");
+}
+
+#[test]
+fn a_midi_trigger_matches_the_full_32_bit_value_and_the_group() {
+    let trigger = Trigger::new(TriggerSpec::Midi {
+        message: MidiMessageKind::ControlChange,
+        channel: Some(1),
+        number: Some(7),
+        value: Some(0x1234_5678),
+        group: Some(2),
+    });
+    assert!(trigger.matches(&Event::Midi(MidiLevel {
+        channel: 1,
+        kind: "cc".into(),
+        number: 7,
+        value: 0x1234,
+        value32: Some(0x1234_5678),
+        group: Some(2),
+    })));
+    // A MIDI 1.0 observation cannot match: it has neither a group nor a 32-bit value.
+    assert!(!trigger.matches(&Event::Midi(MidiLevel {
+        channel: 1,
+        kind: "cc".into(),
+        number: 7,
+        value: 0x1234,
+        ..Default::default()
+    })));
+    // A different group is a different source.
+    assert!(!trigger.matches(&Event::Midi(MidiLevel {
+        channel: 1,
+        kind: "cc".into(),
+        number: 7,
+        value: 0x1234,
+        value32: Some(0x1234_5678),
+        group: Some(3),
+    })));
+}
+
+#[test]
+fn a_midi1_trigger_still_matches_midi1_events_exactly() {
+    let trigger = Trigger::new(TriggerSpec::Midi {
+        message: MidiMessageKind::NoteOn,
+        channel: Some(0),
+        number: Some(60),
+        value: Some(127),
+        group: None,
+    });
+    assert!(trigger.matches(&Event::Midi(MidiLevel::midi1(0, "note_on", 60, 127))));
+    assert!(!trigger.matches(&Event::Midi(MidiLevel::midi1(0, "note_on", 60, 126))));
+    // A MIDI 2.0 note-on with the same channel and note matches on its 16-bit velocity.
+    assert!(trigger.matches(&Event::Midi(MidiLevel {
+        channel: 0,
+        kind: "note_on".into(),
+        number: 60,
+        value: 127,
+        value32: Some(127),
+        group: Some(0),
+    })));
+}
+
+#[test]
+fn an_ump_group_above_fifteen_is_rejected() {
+    let diags = expect_invalid(
+        r#"
+format_version: 1
+name: Group
+revision: 1
+rules:
+  - id: r1
+    name: bad group
+    trigger: { type: midi, message: control_change, channel: 0, number: 7, group: 99 }
+    actions:
+      - { id: log, type: log.incident, message: "x" }
+"#,
+    );
+    assert!(
+        diags.iter().any(|d| d.location.ends_with(".group")),
+        "{diags:?}"
+    );
 }

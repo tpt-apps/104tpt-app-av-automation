@@ -46,7 +46,7 @@ pub struct DmxLevel {
 }
 
 /// A MIDI observation, normalized from MIDI 1.0 or MIDI 2.0/UMP.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct MidiLevel {
     /// Zero-based MIDI channel.
     pub channel: u8,
@@ -56,10 +56,44 @@ pub struct MidiLevel {
     /// would make every persisted MIDI execution unreadable.
     #[serde(rename = "message")]
     pub kind: String,
-    /// Message number: note number, CC number or program number.
+    /// Message number: note number, CC number, program number or controller index.
     pub number: u8,
     /// Primary value: velocity, CC value or program value.
+    ///
+    /// MIDI 1.0 is 7- or 16-bit wide, so this is the natural place to compare against a rule's
+    /// `value`. MIDI 2.0 carries a full 32-bit value, which is also reported in `value32`.
     pub value: u16,
+    /// The full 32-bit value of a MIDI 2.0 message, when the source was a UMP packet.
+    ///
+    /// `None` for MIDI 1.0, which has no 32-bit data. Rules can compare against it for 16-bit
+    /// velocity or per-note resolution that MIDI 1.0 cannot express.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub value32: Option<u32>,
+    /// The UMP port group (0-15) a MIDI 2.0 message arrived on.
+    ///
+    /// `None` for MIDI 1.0 and for a UMP message whose group was not meaningful. Rules may select
+    /// on it to separate independent MIDI 2. sources sharing one cable.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group: Option<u8>,
+}
+
+impl MidiLevel {
+    /// A MIDI 1.0 observation: no 32-bit value and no UMP group.
+    pub fn midi1(channel: u8, kind: impl Into<String>, number: u8, value: u16) -> Self {
+        Self {
+            channel,
+            kind: kind.into(),
+            number,
+            value,
+            value32: None,
+            group: None,
+        }
+    }
+
+    /// The value a rule compares against: the 32-bit value when there is one, else the 1.0 value.
+    pub fn effective_value(&self) -> u32 {
+        self.value32.unwrap_or(u32::from(self.value))
+    }
 }
 
 /// Health of a monitored device/endpoint (spec §6.5).
@@ -205,6 +239,7 @@ mod tests {
                 kind: "note_on".into(),
                 number: 60,
                 value: 127,
+                ..Default::default()
             }),
             Event::Dmx(DmxLevel {
                 universe: 1,

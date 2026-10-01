@@ -71,6 +71,7 @@ impl AlertSeverity {
 /// underscored variant names, so a rule pack reads the same as the specification and the docs.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type")]
+#[serde(deny_unknown_fields)]
 pub enum ActionSpec {
     /// Send an OSC message (spec §8.1).
     #[serde(rename = "control.osc")]
@@ -281,9 +282,7 @@ impl ActionSpec {
     ) -> Result<&'a ActionSpec, &'static str> {
         match self {
             ActionSpec::UseAction { library: key } => {
-                let resolved = library
-                    .get(key)
-                    .ok_or("library fragment does not exist")?;
+                let resolved = library.get(key).ok_or("library fragment does not exist")?;
                 if matches!(resolved, ActionSpec::UseAction { .. }) {
                     return Err("library fragments must not reference other fragments");
                 }
@@ -310,7 +309,6 @@ impl Default for FailurePolicy {
     fn default() -> Self {
         FailurePolicy::StopChain
     }
-
 }
 impl FailurePolicy {
     /// The canonical label.
@@ -383,4 +381,3 @@ impl ActionStep {
         self.device.as_deref()
     }
 }
-

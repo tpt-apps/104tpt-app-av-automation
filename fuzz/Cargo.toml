@@ -1,0 +1,61 @@
+[package]
+name = "tpt-av-automation-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+# Coverage-guided fuzz targets (spec §18.5). These need a nightly toolchain and are
+# deliberately kept out of the main workspace so `cargo build` stays on stable.
+#
+#   cargo +nightly fuzz run rule_pack -- -max_total_time=60
+#   cargo +nightly fuzz run inbound_osc
+#   cargo +nightly fuzz run inbound_midi
+#   cargo +nightly fuzz run inbound_dmx
+#   cargo +nightly fuzz run api_request
+#
+# Each target asserts the invariant that matters for a live show: arbitrary bytes are
+# either rejected or turned into a usable value, and never panic, abort or hang.
+[dependencies]
+libfuzzer-sys = "0.4"
+arbitrary = { version = "1", features = ["derive"] }
+
+tpt-app-av-automation-model = { path = "../crates/tpt-app-av-automation-model" }
+tpt-app-av-automation-core = { path = "../crates/tpt-app-av-automation-core" }
+tpt-app-av-automation-triggers = { path = "../crates/tpt-app-av-automation-triggers" }
+tpt-app-av-automation-service = { path = "../crates/tpt-app-av-automation-service" }
+
+[profile.release]
+debug = 1
+
+[[bin]]
+name = "rule-pack"
+path = "fuzz_targets/rule_pack.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "inbound-osc"
+path = "fuzz_targets/inbound_osc.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "inbound-midi"
+path = "fuzz_targets/inbound_midi.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "inbound-dmx"
+path = "fuzz_targets/inbound_dmx.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "api-request"
+path = "fuzz_targets/api_request.rs"
+test = false
+doc = false

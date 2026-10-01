@@ -2,6 +2,14 @@
 **/*.rs.bk
 *.pdb
 
+# Fuzzing: libFuzzer build output, corpora and crash artifacts. Corpora are large,
+# machine-specific and reproducible from the seeds, so they are not committed.
+fuzz/target/
+fuzz/coverage/
+fuzz/corpus/
+fuzz/artifacts/
+fuzz/Cargo.lock
+
 .DS_Store
 Thumbs.db
 

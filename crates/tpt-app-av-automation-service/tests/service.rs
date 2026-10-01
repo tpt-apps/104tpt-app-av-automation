@@ -13,6 +13,7 @@ use tpt_app_av_automation_model::RulePack;
 use tpt_app_av_automation_report::Filter;
 use tpt_app_av_automation_service::{Service, ServiceConfig, ServiceHandle, Store};
 use tpt_av_control_osc::{OscArg, OscMessage};
+use tpt_av_control_midi::{Midi2ChannelVoice, Midi2Message, Ump};
 
 const TOKEN: &str = "0123456789abcdef-test-token";
 const T0: u64 = 1_704_067_200_000; // Monday 2024-01-01 00:00 UTC
@@ -606,4 +607,86 @@ rules:
     assert_eq!(store.incidents(10).unwrap().len(), 1);
     drop(store);
     let _ = std::fs::remove_dir_all(dir);
+}
+
+/// A pack triggered by a full 32-bit MIDI 2.0 control change on UMP group 2.
+const UMP_PACK: &str = r#"
+format_version: 1
+name: UMP
+revision: 1
+rules:
+  - id: cc-7
+    name: CC 7 on group 2
+    armed: true
+    trigger:
+      type: midi
+      message: control_change
+      channel: 1
+      number: 7
+      group: 2
+      value: 305419896
+    actions:
+      - { id: note, type: notify.operator, message: "midi2 cue" }
+"#;
+
+#[test]
+fn midi_2_ump_over_the_network_triggers_a_rule() {
+    let port = free_udp_port();
+    let mut c = config();
+    c.listeners.push(tpt_app_av_automation_service::ListenerConfig {
+        protocol: "ump".into(),
+        bind: format!("127.0.0.1:{port}"),
+    });
+    let running = Running::start(build(UMP_PACK, c, None, Arc::new(SystemClock)));
+    let sender = UdpSocket::bind("127.0.0.1:0").unwrap();
+    let target = ("127.0.0.1", port);
+
+    // A MIDI 2.0 control change: group 2, channel 1, index 7, value 0x12345678.
+    let packet = Ump::from_message(&Midi2Message::Midi2ChannelVoice(
+        Midi2ChannelVoice::ControlChange {
+            group: 2,
+            channel: 1,
+            index: 7,
+            value: 0x1234_5678,
+        },
+    ))
+    .to_bytes();
+    sender.send_to(&packet, target).unwrap();
+
+    wait_until("the MIDI 2.0 cue to fire", || {
+        !running.handle.snapshot().recent.is_empty()
+    });
+
+    // A message from the wrong group must not fire the rule.
+    let before = running.handle.snapshot().recent.len();
+    let wrong_group = Ump::from_message(&Midi2Message::Midi2ChannelVoice(
+        Midi2ChannelVoice::ControlChange {
+            group: 3,
+            channel: 1,
+            index: 7,
+            value: 0x1234_5678,
+        },
+    ))
+    .to_bytes();
+    for _ in 0..20 {
+        sender.send_to(&wrong_group, target).unwrap();
+    }
+    std::thread::sleep(std::time::Duration::from_millis(200));
+    assert_eq!(
+        running.handle.snapshot().recent.len(),
+        before,
+        "a different UMP group must not fire this rule"
+    );
+
+    // Malformed UMP is counted and does not kill the listener.
+    sender.send_to(&[0x40, 0x90, 0x3C], target).unwrap();
+    sender.send_to(&[0u8; 9], target).unwrap();
+    wait_until("the malformed UMP to be counted", || {
+        running.handle.rejected_counts().0 > 0
+    });
+    let before = running.handle.snapshot().recent.len();
+    sender.send_to(&packet, target).unwrap();
+    wait_until("a valid packet to still work after garbage", || {
+        running.handle.snapshot().recent.len() > before
+    });
 }

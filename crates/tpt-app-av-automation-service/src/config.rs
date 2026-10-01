@@ -9,7 +9,10 @@ use tpt_app_av_automation_core::{Diagnostic, Error, Result};
 /// A UDP listener for inbound control traffic.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ListenerConfig {
-    /// `osc`, `artnet`, `sacn` or `midi`.
+    /// `osc`, `artnet`, `sacn`, `ump` or `midi`.
+    ///
+    /// `ump` is MIDI 2.0 over UDP: raw Universal MIDI Packets, which is how a MIDI 2.0 gateway
+    /// on the venue network delivers them. `midi` is a local MIDI 1.0 port.
     pub protocol: String,
     /// Address to bind, e.g. `0.0.0.0:9000`; for `midi`, (part of) the MIDI input port name.
     pub bind: String,
@@ -126,10 +129,13 @@ impl ServiceConfig {
             out.push(Diagnostic::error("heartbeat_interval_ms", "must be greater than zero"));
         }
         for (i, l) in self.listeners.iter().enumerate() {
-            if !matches!(l.protocol.as_str(), "osc" | "artnet" | "sacn" | "midi") {
+            if !matches!(l.protocol.as_str(), "osc" | "artnet" | "sacn" | "ump" | "midi") {
                 out.push(Diagnostic::error(
                     format!("listeners[{i}].protocol"),
-                    format!("unknown protocol `{}`; expected osc, artnet, sacn or midi", l.protocol),
+                    format!(
+                        "unknown protocol `{}`; expected osc, artnet, sacn, ump or midi",
+                        l.protocol
+                    ),
                 ));
             }
             if l.protocol == "midi" {

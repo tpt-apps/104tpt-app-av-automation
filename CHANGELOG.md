@@ -25,9 +25,20 @@ released. The CLI exit-code contract (0–6) and the `format_version: 1` rule fo
 - Persistent incident log and `GET /incidents`.
 - Write-ahead scheduler state: one-shot schedules are at-most-once across a hard kill.
 - Golden rule-pack traces, chaos tests, mutation-based robustness tests and a throughput test.
+- Coverage-guided fuzz targets (`fuzz/`) for the rule-pack parser, inbound OSC/MIDI/Art-Net/sACN and the
+  local API, run by CI on Linux with AddressSanitizer. Windows cannot run them: Rust ships no ASan
+  runtime for `x86_64-pc-windows-msvc`.
+- GitHub Actions CI: Linux (fmt, clippy, systemd unit validation, tests), Windows (tests, packaged
+  release smoke test) and nightly fuzzing.
 - Windows packaging script (static CRT) and a hardened systemd unit (Linux unvalidated).
 
 ### Fixed
+- Mistyped keys in a rule pack were silently ignored instead of rejected, so an operator could arm a
+  show believing a cue was configured when the engine had dropped the instruction. Packs, rules,
+  policies, conditions, actions and triggers are now strict; unit-variant triggers (`type: manual`)
+  are audited against a key allowlist, which serde cannot police on its own.
+- `device` inside an `action_library` fragment was dropped without complaint, leaving a fragment with
+  no target. The target belongs on the calling `workflow.use_action` step and is now required there.
 - `Event::Midi` serialized two `kind` keys, so any persisted MIDI execution could not be read back.
 - `RulePack::from_path` no longer reports parse and validation failures as storage errors, which
   hid the located diagnostics and produced the wrong CLI exit code.

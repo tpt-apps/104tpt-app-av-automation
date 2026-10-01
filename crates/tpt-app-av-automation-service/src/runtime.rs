@@ -210,6 +210,16 @@ impl ServiceHandle {
         )
     }
 
+    /// Adaptive-backoff episodes started so far (a source repeatedly exceeding its budget).
+    pub fn backoff_episodes(&self) -> u64 {
+        self.inbound.backoff_episodes()
+    }
+
+    /// Datagrams rejected while their source was already muted by backoff.
+    pub fn backed_off(&self) -> u64 {
+        self.inbound.backed_off()
+    }
+
     pub(crate) fn set_api_addr(&self, addr: SocketAddr) {
         *self.api_addr.lock().unwrap_or_else(|e| e.into_inner()) = Some(addr);
     }
@@ -636,6 +646,8 @@ fn spawn_listener(
             let result = match protocol.as_str() {
                 "osc" => handle.inbound.osc(&source, &buf[..n], now),
                 "artnet" => handle.inbound.artnet(&source, &buf[..n], now),
+                // MIDI 2.0 arrives as raw Universal MIDI Packets over the venue network.
+                "ump" => handle.inbound.ump(&source, &buf[..n], now),
                 _ => handle.inbound.sacn(&source, &buf[..n], now),
             };
             match result {

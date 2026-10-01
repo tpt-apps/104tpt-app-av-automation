@@ -51,7 +51,10 @@ Phase 4 and 5 are untouched.
   - _Status:_ OSC, MIDI and DMX/Art-Net/sACN codecs are used; the control-surface crate is not (no surface triggers yet). Supported protocols are listed in `docs/integrations.md`.
 - [x] Implement the device/endpoint registry (§6.5)
 - [x] Implement the rule/trigger/condition/action domain model (§6.1–§6.4, §6.6) — `model` crate, with validation and integration tests
-- [x] Implement the YAML rule-pack parser and validator, with versioning (§9) — in progress: model types, `pack`, and `validate` (steps + cross-reference checks) exist; verify parser/versioning coverage
+- [x] Implement the YAML rule-pack parser and validator, with versioning (§9)
+  - _Status:_ model types, `pack`, and `validate` (steps + cross-reference checks). Unknown keys are now
+    rejected at every level (including unit-variant triggers via a key allowlist audit), so a typo cannot
+    be silently ignored. Parser/versioning coverage verified.
 - [x] Implement the deterministic evaluation core with virtual-device test support (§3.2, §10)
 - [x] Implement simulation mode end to end — armed/disarmed default-disarmed behaviour (§3.5, §12.5)
   - _Status:_ engine, CLI, service and API; the always-visible UI indicator waits on the desktop UI.
@@ -112,12 +115,18 @@ Phase 4 and 5 are untouched.
   - _Status:_ parser level and over a live UDP listener.
 - [x] Chaos test: network interruption during action execution (§18.4)
   - _Status:_ simulated with injected timeouts/delays/dropouts, not by cutting a real network.
-- [ ] Fuzz the YAML rule parser (§18.5)
-  - _Status:_ seeded mutation tests run in CI (`tests/fuzz.rs`); coverage-guided fuzzing (`cargo fuzz`, nightly) is not set up.
-- [ ] Fuzz inbound OSC/MIDI/DMX message parsing (§18.5)
-  - _Status:_ seeded mutation tests over OSC, bundles, MIDI, Art-Net and sACN; coverage-guided fuzzing not set up.
-- [ ] Fuzz local API request handling (§18.5)
-  - _Status:_ mutation/truncation tests of the HTTP parser; coverage-guided fuzzing not set up.
+- [x] Fuzz the YAML rule parser (§18.5)
+  - _Status:_ coverage-guided targets in `fuzz/` (`rule-pack`, `inbound-osc`, `inbound-midi`,
+    `inbound-dmx`, `api-request`), all building clean on nightly and run by CI on Linux. Round-trip and
+    arm-safety invariants are also asserted deterministically by `tests/roundtrip.rs` on stable.
+    **Windows cannot run these:** Rust ships no ASan runtime for `x86_64-pc-windows-msvc`, so
+    `cargo fuzz` cannot link there — fuzzing is Linux-only, which is why the CI job is `ubuntu-latest`.
+- [x] Fuzz inbound OSC/MIDI/DMX message parsing (§18.5)
+  - _Status:_ `inbound-osc`, `inbound-midi` and `inbound-dmx` targets assert event-count bounds, rate-limit
+    enforcement and universe-map bounding, alongside the existing seeded mutation tests.
+- [x] Fuzz local API request handling (§18.5)
+  - _Status:_ `api-request` target asserts the parser never panics and never yields an empty method or a
+    non-absolute path.
 - [x] Establish permanent-regression-fixture policy for production bugs (§18.6)
   - _Status:_ `CONTRIBUTING.md` and `tests/fixtures/regression/`, replayed by the golden suite.
 
@@ -130,7 +139,8 @@ Phase 4 and 5 are untouched.
 - [x] Package Windows release
   - _Status:_ `scripts/package-windows.ps1` builds a static-CRT zip with SHA-256 and smoke-tests it; unsigned, no installer or Windows-service wrapper.
 - [ ] Validate headless Linux service deployment
-  - _Status:_ unit file and docs written (`scripts/tpt-av-automation.service`); never run on Linux.
+  - _Status:_ unit file and docs written (`scripts/tpt-av-automation.service`); CI now runs
+    `systemd-analyze verify` on it on every push, but no real Linux host has run the service.
 - [ ] Test clean-machine installation (no dev tooling required)
   - _Status:_ the package imports only always-present Windows DLLs, but it has not been tried on a fresh machine/VM.
 - [ ] Verify Definition of Done checklist (§24):

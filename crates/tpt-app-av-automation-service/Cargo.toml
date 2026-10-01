@@ -29,6 +29,7 @@ tpt-app-av-automation-report = { workspace = true }
 [dev-dependencies]
 tpt-av-control-dmx = { workspace = true }
 tpt-av-control-osc = { workspace = true }
+tpt-av-control-midi = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
 

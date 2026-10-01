@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 use tpt_app_av_automation_core::{Event, Timestamp};
-use tpt_app_av_automation_model::{Rule, ScheduleSpec, TriggerSpec};
+use tpt_app_av_automation_model::{Rule, ScheduleMoment, ScheduleSpec, TriggerSpec};
 
 const MILLIS_PER_MINUTE: i64 = 60_000;
 const MINUTES_PER_DAY: i64 = 1_440;
@@ -28,6 +28,27 @@ pub struct LocalMoment {
     pub weekday_index: usize,
     /// Minutes since the local epoch; unique per wall-clock minute.
     pub absolute_minute: i64,
+    /// Day of the local month, 1-31. Needed by cron day-of-month fields.
+    pub day_of_month: u32,
+    /// Month of the local year, 1-12. Needed by cron month fields.
+    pub month: u32,
+}
+
+/// The proleptic Gregorian calendar date for a count of days since 1970-01-01.
+///
+/// Howard Hinnant's `civil_from_days` algorithm: exact over the whole range, with no lookup tables
+/// and no timezone database, so the cron day-of-month and month fields work offline.
+fn civil_from_days(days: i64) -> (i64, u32, u32) {
+    let z = days + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = z - era * 146_097; // 0-146096
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146_096) / 365; // 0-399
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100); // 0-365
+    let mp = (5 * doy + 2) / 153; // 0-11
+    let d = (doy - (153 * mp + 2) / 5 + 1) as u32; // 1-31
+    let m = if mp < 10 { mp + 3 } else { mp - 9 } as u32; // 1-12
+    (if m <= 2 { y + 1 } else { y }, m, d)
 }
 
 impl LocalClock {
@@ -42,11 +63,16 @@ impl LocalClock {
         let local_millis = millis.saturating_add(i64::from(self.utc_offset_minutes) * MILLIS_PER_MINUTE);
         let absolute_minute = local_millis.div_euclid(MILLIS_PER_MINUTE);
         let day = absolute_minute.div_euclid(MINUTES_PER_DAY);
+        // 1970-01-01 was a Thursday, index 3 when Monday is 0.
+        let weekday_index = (day + 3).rem_euclid(7) as usize;
+        // Clamp before converting: a saturated timestamp must still produce a usable date.
+        let (_, month, day_of_month) = civil_from_days(day.clamp(-1_000_000, 1_000_000));
         LocalMoment {
             minutes_since_midnight: absolute_minute.rem_euclid(MINUTES_PER_DAY) as u32,
-            // 1970-01-01 was a Thursday, index 3 when Monday is 0.
-            weekday_index: (day + 3).rem_euclid(7) as usize,
+            weekday_index,
             absolute_minute,
+            day_of_month,
+            month,
         }
     }
 }
@@ -119,6 +145,12 @@ impl Scheduler {
     /// down are not replayed.
     pub fn poll(&mut self, now: Timestamp, clock: LocalClock) -> Vec<Event> {
         let local = clock.local(now);
+        let moment = ScheduleMoment {
+            minute: local.minutes_since_midnight,
+            weekday_index: local.weekday_index,
+            day_of_month: Some(local.day_of_month),
+            month: Some(local.month),
+        };
         let mut events = Vec::new();
         for (label, spec) in &self.entries {
             let due = if let Some(interval) = spec.interval_ms {
@@ -139,7 +171,7 @@ impl Scheduler {
                     }
                     Some(_) => false,
                 }
-            } else if spec.due_at(local.minutes_since_midnight, local.weekday_index) {
+            } else if spec.due_minute(&moment) {
                 let already_this_minute =
                     self.state.last_fired_minute.get(label) == Some(&local.absolute_minute);
                 let spent_one_shot = spec.once && self.state.fired_once.contains(label);
@@ -272,5 +304,102 @@ mod tests {
         s.add(ScheduleSpec::interval(0));
         let _ = s.poll(Timestamp::from_millis(u64::MAX), LocalClock::new(i32::MAX));
         let _ = s.poll(Timestamp::from_millis(0), LocalClock::new(i32::MIN));
+    }
+
+    #[test]
+    fn civil_dates_are_derived_from_the_local_day() {
+        let clock = LocalClock::default();
+        // 2024-01-01 was a Monday.
+        assert_eq!((clock.local(ts(0, 12, 0, 0)).day_of_month, clock.local(ts(0, 12, 0, 0)).month), (1, 1));
+        // Day 59 of 2024 is 29 February, a leap year.
+        assert_eq!(
+            (
+                clock.local(ts(59, 12, 0, 0)).day_of_month,
+                clock.local(ts(59, 12, 0, 0)).month
+            ),
+            (29, 2)
+        );
+        // Day 365 is 31 December.
+        assert_eq!(
+            (
+                clock.local(ts(365, 12, 0, 0)).day_of_month,
+                clock.local(ts(365, 12, 0, 0)).month
+            ),
+            (31, 12)
+        );
+        // A year later the same offset lands on 2025-01-01.
+        assert_eq!(
+            (
+                clock.local(ts(366, 12, 0, 0)).day_of_month,
+                clock.local(ts(366, 12, 0, 0)).month
+            ),
+            (1, 1)
+        );
+    }
+
+    #[test]
+    fn a_cron_schedule_fires_on_every_matching_minute() {
+        let mut s = Scheduler::new();
+        s.add(ScheduleSpec::cron("0,30 * * * *"));
+        let clock = LocalClock::default();
+        // Monday 09:00 and 09:30 fire; 09:01 does not.
+        assert_eq!(s.poll(ts(0, 9, 0, 0), clock).len(), 1);
+        assert!(s.poll(ts(0, 9, 0, 30), clock).is_empty(), "same minute, idempotent");
+        assert!(s.poll(ts(0, 9, 1, 0), clock).is_empty());
+        assert_eq!(s.poll(ts(0, 9, 30, 0), clock).len(), 1);
+        assert_eq!(s.poll(ts(0, 9, 0, 0), clock).len(), 1, "next day");
+        assert_eq!(s.len(), 1);
+    }
+
+    #[test]
+    fn a_cron_schedule_can_gate_on_the_weekday() {
+        let mut s = Scheduler::new();
+        s.add(ScheduleSpec::cron("0 9 * * mon"));
+        let clock = LocalClock::default();
+        assert_eq!(s.poll(ts(0, 9, 0, 0), clock).len(), 1, "monday");
+        assert!(s.poll(ts(1, 9, 0, 0), clock).is_empty(), "tuesday");
+        assert!(s.poll(ts(6, 9, 0, 0), clock).is_empty(), "sunday");
+        assert_eq!(s.poll(ts(7, 9, 0, 0), clock).len(), 1, "next monday");
+    }
+
+    #[test]
+    fn a_cron_schedule_can_gate_on_the_day_of_month() {
+        let mut s = Scheduler::new();
+        s.add(ScheduleSpec::cron("0 0 1 * *"));
+        let clock = LocalClock::default();
+        // Day 0 is 1 January 2024, which matches.
+        assert_eq!(s.poll(ts(0, 0, 0, 0), clock).len(), 1);
+        // Day 1 is the 2nd, which does not.
+        assert!(s.poll(ts(1, 0, 0, 0), clock).is_empty());
+        // Day 31 of January is the 1st of February in a leap year (2024-02-01).
+        assert_eq!(s.poll(ts(31, 0, 0, 0), clock).len(), 1);
+        assert!(s.poll(ts(32, 0, 0, 0), clock).is_empty());
+    }
+
+    #[test]
+    fn a_cron_one_shot_fires_exactly_once_ever() {
+        let mut spec = ScheduleSpec::cron("0 * * * *");
+        spec.once = true;
+        let clock = LocalClock::default();
+        let mut s = Scheduler::new();
+        s.add(spec.clone());
+        assert_eq!(s.poll(ts(0, 9, 0, 0), clock).len(), 1);
+        assert!(s.poll(ts(0, 10, 0, 0), clock).is_empty(), "later the same day");
+        assert!(s.poll(ts(1, 9, 0, 0), clock).is_empty(), "the next day");
+
+        // And it survives a restart from persisted state.
+        let saved = serde_json::to_string(s.state()).unwrap();
+        let mut restarted = Scheduler::new();
+        restarted.add(spec);
+        restarted.restore(serde_json::from_str(&saved).unwrap());
+        assert!(restarted.poll(ts(2, 9, 0, 0), clock).is_empty());
+    }
+
+    #[test]
+    fn an_unparseable_cron_schedule_never_fires_but_still_labels_itself() {
+        let mut s = Scheduler::new();
+        s.add(ScheduleSpec::cron("not a cron"));
+        assert!(s.poll(ts(0, 0, 0, 0), LocalClock::default()).is_empty());
+        assert_eq!(s.entries.keys().next().unwrap(), "cron not a cron");
     }
 }

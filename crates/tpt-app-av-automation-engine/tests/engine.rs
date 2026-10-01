@@ -661,6 +661,7 @@ rules:
         kind: "note_on".into(),
         number: 60,
         value: 127,
+        ..Default::default()
     }));
     assert_eq!(records[0].overall_status, ExecutionStatus::Success);
     assert_eq!(h.sent("synth").len(), 1);
@@ -671,7 +672,8 @@ rules:
             channel: 1,
             kind: "note_on".into(),
             number: 60,
-            value: 127
+            value: 127,
+            ..Default::default()
         }))
         .is_empty());
 }

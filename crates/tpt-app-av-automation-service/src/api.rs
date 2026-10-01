@@ -458,7 +458,13 @@ fn health(handle: &ServiceHandle) -> Value {
             "unknown": count(DeviceHealth::Unknown),
         },
         "active_chains": snapshot.active_chains.len(),
-        "rejected_inbound": { "malformed": malformed, "rate_limited": rate_limited, "queue_dropped": queue_dropped },
+        "rejected_inbound": {
+            "malformed": malformed,
+            "rate_limited": rate_limited,
+            "backed_off": handle.backed_off(),
+            "backoff_episodes": handle.backoff_episodes(),
+            "queue_dropped": queue_dropped,
+        },
     })
 }
 

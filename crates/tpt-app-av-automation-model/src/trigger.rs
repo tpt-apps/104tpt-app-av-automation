@@ -7,6 +7,35 @@ use serde::{Deserialize, Serialize};
 use tpt_app_av_automation_core::{DeviceHealth, Event, Result};
 
 use crate::condition::Comparison;
+use crate::cron::CronSchedule;
+
+/// The local wall-clock fields a schedule is evaluated against.
+///
+/// `day_of_month` and `month` are `None` for callers that only know the time of day (the CLI's
+/// `--event schedule:HH:MM` form); a [`ScheduleSpec::cron`] expression then ignores them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ScheduleMoment {
+    /// Minutes since local midnight, 0-1439.
+    pub minute: u32,
+    /// Monday-first weekday index, `0` = Monday.
+    pub weekday_index: usize,
+    /// Day of the local month, 1-31, when known.
+    pub day_of_month: Option<u32>,
+    /// Month of the local year, 1-12, when known.
+    pub month: Option<u32>,
+}
+
+impl ScheduleMoment {
+    /// A moment with only a time of day and a weekday.
+    pub fn at(minute: u32, weekday_index: usize) -> Self {
+        Self {
+            minute,
+            weekday_index,
+            day_of_month: None,
+            month: None,
+        }
+    }
+}
 
 /// Days of the week accepted by schedule triggers, using YAML-friendly lowercase names.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -122,18 +151,25 @@ impl LocalTime {
 }
 /// A time-based trigger specification (spec §7.1).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ScheduleSpec {
     /// Fire at this local wall-clock time.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub at: Option<LocalTime>,
+    /// Fire on a five-field cron expression, `minute hour day-of-month month day-of-week`.
+    ///
+    /// An alternative to `at` for anything a single time-of-day cannot express: several minutes per
+    /// hour, hour ranges, month and weekday selection. See [`CronSchedule`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cron: Option<String>,
     /// Repeat every N milliseconds instead of at a fixed time.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub interval_ms: Option<u64>,
-    /// Only fire on these weekdays. Empty means every day.
+    /// Only fire on these weekdays. Empty means every day. Ignored when `cron` sets the weekday.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub days: Vec<Weekday>,
-    /// Fire once at `at`, then never again — the form that must not re-fire after a restart
-    /// (spec §11).
+    /// Fire once at `at` or at the first `cron` match, then never again — the form that must not
+    /// re-fire after a restart (spec §11).
     #[serde(default)]
     pub once: bool,
 }
@@ -143,6 +179,7 @@ impl ScheduleSpec {
     pub fn daily(at: LocalTime) -> Self {
         Self {
             at: Some(at),
+            cron: None,
             interval_ms: None,
             days: Vec::new(),
             once: false,
@@ -153,6 +190,7 @@ impl ScheduleSpec {
     pub fn interval(interval_ms: u64) -> Self {
         Self {
             at: None,
+            cron: None,
             interval_ms: Some(interval_ms),
             days: Vec::new(),
             once: false,
@@ -163,16 +201,49 @@ impl ScheduleSpec {
     pub fn one_shot(at: LocalTime, days: Vec<Weekday>) -> Self {
         Self {
             at: Some(at),
+            cron: None,
             interval_ms: None,
             days,
             once: true,
         }
     }
 
+    /// Builds a schedule from a cron expression.
+    ///
+    /// The expression is not validated here — that is the validator's job, so a bad expression is
+    /// a located diagnostic rather than a parse failure.
+    pub fn cron(expression: impl Into<String>) -> Self {
+        Self {
+            at: None,
+            cron: Some(expression.into()),
+            interval_ms: None,
+            days: Vec::new(),
+            once: false,
+        }
+    }
+
+    /// The parsed cron expression, if this schedule has a valid one.
+    pub fn parsed_cron(&self) -> Option<CronSchedule> {
+        CronSchedule::parse(self.cron.as_deref()?).ok()
+    }
+
     /// Stable label used in reports and as the [`tpt_app_av_automation_core::Event::Schedule`] spec.
     pub fn label(&self) -> String {
         if let Some(interval) = self.interval_ms {
             return format!("every:{interval}ms");
+        }
+        if let Some(cron) = self.parsed_cron() {
+            let body = format!("cron {}", cron.to_expression());
+            return if self.once {
+                format!("{body} (once)")
+            } else {
+                body
+            };
+        }
+        // An unparseable expression is rejected by validation; label it verbatim so the offending
+        // text still reaches the operator through execution records.
+        if let Some(raw) = &self.cron {
+            return format!("cron {raw}");
         }
         match self.at {
             Some(at) if self.days.is_empty() && !self.once => at.to_string(),
@@ -207,11 +278,35 @@ impl ScheduleSpec {
     /// current local minute equals the target, so a scheduler polling every 30s fires exactly once
     /// and the answer depends only on the supplied time, never on poll timing.
     pub fn due_at(&self, now_minutes_since_midnight: u32, weekday_index: usize) -> bool {
-        if !self.day_matches(weekday_index) {
+        self.due_minute(&ScheduleMoment::at(now_minutes_since_midnight, weekday_index))
+    }
+
+    /// Whether this schedule is due at the given local wall-clock moment.
+    ///
+    /// Handles both fixed times and cron expressions. A cron schedule ignores the `days` list,
+    /// because the expression's own day-of-week field is the authoritative one; validation rejects
+    /// the two being combined.
+    ///
+    /// Interval schedules never report due here — they are advanced by the scheduler's own period
+    /// accounting, which must not depend on the wall clock.
+    pub fn due_minute(&self, moment: &ScheduleMoment) -> bool {
+        if let Some(cron) = self.parsed_cron() {
+            let day = moment.day_of_month.unwrap_or(1);
+            let month = moment.month.unwrap_or(1);
+            // `ScheduleMoment.minute` counts from midnight; cron counts from the hour.
+            return cron.matches(
+                moment.minute % 60,
+                moment.minute / 60,
+                day,
+                month,
+                moment.weekday_index,
+            );
+        }
+        if !self.day_matches(moment.weekday_index) {
             return false;
         }
         match self.at {
-            Some(at) => at.minutes_since_midnight() == now_minutes_since_midnight,
+            Some(at) => at.minutes_since_midnight() == moment.minute,
             // Interval schedules are advanced by the scheduler, not by wall-clock comparison.
             None => false,
         }
@@ -219,6 +314,10 @@ impl ScheduleSpec {
 }
 
 /// Which MIDI message kinds a control trigger can match.
+///
+/// The first four are common to MIDI 1.0 and MIDI 2.0. The rest exist only in MIDI 2.0 (spec §7.2);
+/// they never match a MIDI 1.0 observation, because that message kind cannot be produced by a
+/// MIDI 1.0 byte stream.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MidiMessageKind {
@@ -230,6 +329,28 @@ pub enum MidiMessageKind {
     ControlChange,
     /// Program change.
     ProgramChange,
+    /// Channel (aftertouch) pressure, 32-bit.
+    ChannelPressure,
+    /// Per-note pressure, 32-bit.
+    PolyphonicPressure,
+    /// Pitch bend, 32-bit and centred on `0x8000_0000`.
+    PitchBend,
+    /// Registered parameter number.
+    Rpn,
+    /// Non-registered parameter number.
+    Nrpn,
+    /// Relative registered parameter number (a signed delta).
+    RelativeRpn,
+    /// Relative non-registered parameter number (a signed delta).
+    RelativeNrpn,
+    /// Registered per-note controller.
+    PerNoteRcc,
+    /// Assignable per-note controller.
+    PerNoteAcc,
+    /// Per-note pitch bend.
+    PerNotePitchBend,
+    /// Per-note management (note attributes and controller reset flags).
+    PerNoteManagement,
 }
 
 impl MidiMessageKind {
@@ -240,7 +361,48 @@ impl MidiMessageKind {
             MidiMessageKind::NoteOff => "note_off",
             MidiMessageKind::ControlChange => "cc",
             MidiMessageKind::ProgramChange => "program_change",
+            MidiMessageKind::ChannelPressure => "channel_pressure",
+            MidiMessageKind::PolyphonicPressure => "polyphonic_pressure",
+            MidiMessageKind::PitchBend => "pitch_bend",
+            MidiMessageKind::Rpn => "rpn",
+            MidiMessageKind::Nrpn => "nrpn",
+            MidiMessageKind::RelativeRpn => "relative_rpn",
+            MidiMessageKind::RelativeNrpn => "relative_nrpn",
+            MidiMessageKind::PerNoteRcc => "per_note_rcc",
+            MidiMessageKind::PerNoteAcc => "per_note_acc",
+            MidiMessageKind::PerNotePitchBend => "per_note_pitch_bend",
+            MidiMessageKind::PerNoteManagement => "per_note_management",
         }
+    }
+
+    /// Every kind, in declaration order.
+    pub const ALL: [MidiMessageKind; 15] = [
+        MidiMessageKind::NoteOn,
+        MidiMessageKind::NoteOff,
+        MidiMessageKind::ControlChange,
+        MidiMessageKind::ProgramChange,
+        MidiMessageKind::ChannelPressure,
+        MidiMessageKind::PolyphonicPressure,
+        MidiMessageKind::PitchBend,
+        MidiMessageKind::Rpn,
+        MidiMessageKind::Nrpn,
+        MidiMessageKind::RelativeRpn,
+        MidiMessageKind::RelativeNrpn,
+        MidiMessageKind::PerNoteRcc,
+        MidiMessageKind::PerNoteAcc,
+        MidiMessageKind::PerNotePitchBend,
+        MidiMessageKind::PerNoteManagement,
+    ];
+
+    /// Whether a message of this kind can only be carried by MIDI 2.0 (UMP).
+    pub fn is_midi2_only(self) -> bool {
+        !matches!(
+            self,
+            MidiMessageKind::NoteOn
+                | MidiMessageKind::NoteOff
+                | MidiMessageKind::ControlChange
+                | MidiMessageKind::ProgramChange
+        )
     }
 }
 
@@ -282,6 +444,7 @@ impl DmxComparison {
 /// A trigger specification: the declarative half of [`Trigger`].
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum TriggerSpec {
     /// Time-based trigger (spec §7.1).
     Schedule(ScheduleSpec),
@@ -309,8 +472,18 @@ pub enum TriggerSpec {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         number: Option<u8>,
         /// Value test applied to velocity/CC value.
+        ///
+        /// Compared against the observation's effective value: the 32-bit value for a MIDI 2.0
+        /// message, the MIDI 1.0 value otherwise. MIDI 1.0 rules are unaffected, because their
+        /// values are below 0x1_0000.
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        value: Option<u16>,
+        value: Option<u32>,
+        /// UMP port group (0-15); `None` means any group.
+        ///
+        /// MIDI 2.0 only: a MIDI 1.0 observation has no group, so a rule that names one can only
+        /// be satisfied by a UMP source.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        group: Option<u8>,
     },
     /// DMX/Art-Net/sACN channel change (spec §7.2).
     #[serde(rename = "dmx")]
@@ -364,6 +537,40 @@ pub enum TriggerSpec {
     },
 }
 
+impl TriggerSpec {
+    /// Whether this variant legitimately accepts the given YAML key.
+    ///
+    /// `#[serde(deny_unknown_fields)]` covers struct variants, but a unit variant such as
+    /// `type: manual` has no field list for serde to check against, so extra keys written beside it
+    /// are silently dropped. `RulePack` therefore audits trigger mappings against this predicate
+    /// during parsing, which keeps `trigger: { type: manual, evnt: x }` a hard error (spec §9).
+    pub fn accepts_key(&self, key: &str) -> bool {
+        // `type` selects the variant and `dmx_previous` belongs to the flattened `Trigger` wrapper.
+        if key == "type" || key == "dmx_previous" {
+            return true;
+        }
+        match self {
+            TriggerSpec::Schedule(_) => crate::trigger::schedule_keys().contains(&key),
+            TriggerSpec::Osc { .. } => ["address", "arg_equals", "min_args"].contains(&key),
+            TriggerSpec::Midi { .. } => ["message", "channel", "number", "value", "group"].contains(&key),
+            TriggerSpec::Dmx { .. } => {
+                ["universe", "channel", "comparison", "value"].contains(&key)
+            }
+            TriggerSpec::DeviceState { .. } => ["device", "state"].contains(&key),
+            TriggerSpec::HeartbeatMissed { .. } => ["device", "after_ms"].contains(&key),
+            TriggerSpec::DeviceParameter { .. } => {
+                ["device", "parameter", "comparison", "value"].contains(&key)
+            }
+            TriggerSpec::Manual => false,
+            TriggerSpec::Api { .. } => key == "name",
+        }
+    }
+}
+
+/// Keys accepted inside a `schedule` trigger body.
+fn schedule_keys() -> &'static [&'static str] {
+    &["at", "cron", "interval_ms", "days", "once"]
+}
 
 impl fmt::Display for LocalTime {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -381,7 +588,7 @@ impl<'de> Deserialize<'de> for LocalTime {
         D: serde::Deserializer<'de>,
     {
         #[derive(Deserialize)]
-                struct Parts {
+        struct Parts {
             hour: u8,
             minute: u8,
         }
@@ -394,11 +601,12 @@ impl<'de> Deserialize<'de> for LocalTime {
         }
 
         match Repr::deserialize(deserializer)? {
-            Repr::Text(text) => text
-                .parse()
-                .map_err(|e: crate::trigger::ParseTimeError| serde::de::Error::custom(e.to_string())),
-            Repr::Parts(Parts { hour, minute }) => LocalTime::new(hour, minute)
-                .ok_or_else(|| serde::de::Error::custom(format!("time out of range: {hour}:{minute}"))),
+            Repr::Text(text) => text.parse().map_err(|e: crate::trigger::ParseTimeError| {
+                serde::de::Error::custom(e.to_string())
+            }),
+            Repr::Parts(Parts { hour, minute }) => LocalTime::new(hour, minute).ok_or_else(|| {
+                serde::de::Error::custom(format!("time out of range: {hour}:{minute}"))
+            }),
         }
     }
 }
@@ -482,9 +690,7 @@ impl Trigger {
         match self.spec {
             TriggerSpec::Dmx {
                 comparison:
-                    DmxComparison::Changed
-                    | DmxComparison::CrossedAbove
-                    | DmxComparison::CrossedBelow,
+                    DmxComparison::Changed | DmxComparison::CrossedAbove | DmxComparison::CrossedBelow,
                 ..
             } => true,
             _ => false,
@@ -499,10 +705,9 @@ impl Trigger {
     /// every rule on every event, so a rule with an OSC trigger must simply ignore DMX traffic.
     pub fn matches(&self, event: &Event) -> bool {
         match (&self.spec, event) {
-            (
-                TriggerSpec::Schedule(spec),
-                Event::Schedule { spec: observed },
-            ) => observed == &spec.label(),
+            (TriggerSpec::Schedule(spec), Event::Schedule { spec: observed }) => {
+                observed == &spec.label()
+            }
             (
                 TriggerSpec::Osc {
                     address,
@@ -533,13 +738,15 @@ impl Trigger {
                     channel,
                     number,
                     value,
+                    group,
                 },
                 Event::Midi(level),
             ) => {
                 level.kind == message.as_str()
                     && channel.is_none_or(|c| c == level.channel)
                     && number.is_none_or(|n| n == level.number)
-                    && value.is_none_or(|v| v == level.value)
+                    && value.is_none_or(|v| v == level.effective_value())
+                    && group.is_none_or(|g| Some(g) == level.group)
             }
             (
                 TriggerSpec::Dmx {
@@ -563,10 +770,7 @@ impl Trigger {
                 },
             ) => device == observed && *current == *state,
             (
-                TriggerSpec::HeartbeatMissed {
-                    device,
-                    after_ms,
-                },
+                TriggerSpec::HeartbeatMissed { device, after_ms },
                 Event::HeartbeatMissed {
                     device: observed,
                     missed_millis,
@@ -584,7 +788,11 @@ impl Trigger {
                     parameter: observed_param,
                     value: reported,
                 },
-            ) => device == observed && parameter == observed_param && comparison.evaluate_f64(*reported, *value),
+            ) => {
+                device == observed
+                    && parameter == observed_param
+                    && comparison.evaluate_f64(*reported, *value)
+            }
             (TriggerSpec::Manual, Event::Manual { rule: None }) => true,
             (TriggerSpec::Manual, Event::Manual { rule: Some(_) }) => true,
             (TriggerSpec::Api { name }, Event::Api { name: observed, .. }) => match name {
@@ -612,12 +820,10 @@ pub fn address_pattern_matches(pattern: &str, address: &str) -> bool {
     if p.len() != a.len() {
         return false;
     }
-    p.iter()
-        .zip(a.iter())
-        .all(|(seg, actual)| match *seg {
-            "*" | "**" => true,
-            other => other.eq_ignore_ascii_case(actual),
-        })
+    p.iter().zip(a.iter()).all(|(seg, actual)| match *seg {
+        "*" | "**" => true,
+        other => other.eq_ignore_ascii_case(actual),
+    })
 }
 
 /// Floating-point comparison with a small tolerance, so YAML-authored thresholds behave.

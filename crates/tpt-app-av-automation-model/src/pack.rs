@@ -25,6 +25,7 @@ pub const MAX_CHAIN_LENGTH: usize = 64;
 
 /// A named, versioned collection of rules.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RulePack {
     /// Rule-pack format version.
     pub format_version: u32,
@@ -65,8 +66,45 @@ impl RulePack {
     pub fn from_yaml_str(source: &str) -> Result<Self> {
         let pack: RulePack =
             serde_yaml::from_str(source).map_err(|e| Error::Parse(format!("{e}")))?;
+        pack.audit_trigger_keys(source)?;
         pack.validate()?;
         Ok(pack)
+    }
+
+    /// Rejects trigger keys that the deserializer silently discarded.
+    ///
+    /// Serde's `deny_unknown_fields` cannot police a unit variant (`type: manual`): there is no
+    /// field list to check against, so `{ type: manual, evnt: x }` parses cleanly and the typo is
+    /// lost. Auditing the raw mapping keeps every mistyped trigger key an error rather than a
+    /// silently ignored instruction in a live-show pack (spec §9).
+    fn audit_trigger_keys(&self, source: &str) -> Result<()> {
+        let raw: serde_yaml::Value =
+            serde_yaml::from_str(source).map_err(|e| Error::Parse(format!("{e}")))?;
+        let rules = match raw.get("rules").and_then(|r| r.as_sequence()) {
+            Some(rules) => rules,
+            None => return Ok(()),
+        };
+
+        for (index, rule) in rules.iter().enumerate() {
+            let (Some(trigger), Some(spec)) = (rule.get("trigger"), self.rules.get(index)) else {
+                continue;
+            };
+            let Some(mapping) = trigger.as_mapping() else {
+                continue;
+            };
+            for key in mapping.keys() {
+                let Some(key) = key.as_str() else {
+                    continue;
+                };
+                if !spec.trigger.spec.accepts_key(key) {
+                    return Err(Error::Parse(format!(
+                        "rules[{index}].trigger: unknown field `{key}` for trigger type `{}`",
+                        spec.trigger.type_label()
+                    )));
+                }
+            }
+        }
+        Ok(())
     }
 
     /// Parses and validates a pack from a file on disk.

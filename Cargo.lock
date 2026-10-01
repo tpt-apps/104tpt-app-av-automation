@@ -946,6 +946,7 @@ dependencies = [
  "tpt-app-av-automation-report",
  "tpt-app-av-automation-triggers",
  "tpt-av-control-dmx",
+ "tpt-av-control-midi",
  "tpt-av-control-osc",
  "tracing",
 ]

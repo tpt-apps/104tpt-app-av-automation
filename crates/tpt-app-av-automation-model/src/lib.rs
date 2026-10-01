@@ -38,6 +38,7 @@
 
 pub mod action;
 pub mod condition;
+pub mod cron;
 pub mod outcome;
 pub mod pack;
 pub mod rule;
@@ -46,13 +47,17 @@ pub mod validate;
 
 pub use action::{ActionSpec, ActionStep, AlertSeverity, DmxTransport, FailurePolicy, MediaOperation};
 pub use condition::{Comparison, Condition, ConditionSpec};
+pub use cron::{CronError, CronSchedule};
 pub use outcome::{
     ActionOutcome, ActionResultRecord, ConditionResult, ConditionResultRecord, ExecutionRecord,
     ExecutionStatus,
 };
 pub use pack::{FORMAT_VERSION, MAX_CHAIN_LENGTH, RulePack, YamlPackSource};
 pub use rule::{Policy, Priority, Rule};
-pub use trigger::{DmxComparison, LocalTime, MidiMessageKind, ScheduleSpec, Trigger, TriggerSpec, Weekday};
+pub use trigger::{
+    DmxComparison, LocalTime, MidiMessageKind, ScheduleMoment, ScheduleSpec, Trigger, TriggerSpec,
+    Weekday,
+};
 pub use validate::{cross, steps, validate_pack};
 
 pub use tpt_app_av_automation_core::{Diagnostic, Error, Result, Severity};

@@ -3,7 +3,7 @@
 use std::fmt;
 
 use serde::{Deserialize, Serialize};
-use tpt_app_av_automation_core::{ActionId, RuleId, slugify_rule_id};
+use tpt_app_av_automation_core::{slugify_rule_id, ActionId, RuleId};
 
 use crate::action::{ActionStep, FailurePolicy};
 use crate::condition::Condition;
@@ -46,6 +46,7 @@ impl fmt::Display for Priority {
 
 /// Chain-level behaviour (spec §6.4).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Policy {
     /// What to do when an action step fails.
     #[serde(default)]
@@ -76,6 +77,7 @@ impl Policy {
 }
 /// A single automation rule (spec §6.1).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Rule {
     /// Stable identifier. Defaults to a slug of [`Rule::name`] when omitted.
     #[serde(default)]

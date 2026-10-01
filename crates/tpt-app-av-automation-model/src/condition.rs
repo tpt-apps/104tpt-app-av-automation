@@ -52,6 +52,7 @@ impl Comparison {
 /// What a condition inspects.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum ConditionSpec {
     /// Device health equals a given state (spec §7.3).
     #[serde(rename = "device_health")]
