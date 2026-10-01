@@ -1,0 +1,22 @@
+format_version: 1
+name: Workflow
+revision: 1
+action_library:
+  projector-on: { type: control.osc, address: /projector/power, args: [1] }
+rules:
+  - id: sequence
+    name: Sequence
+    armed: true
+    trigger: { type: manual }
+    actions:
+      - { id: on, type: workflow.use_action, library: projector-on, device: projector-1 }
+      - { id: settle, type: workflow.wait, ms: 2000 }
+      - { id: source, type: media.video_source, device: projector-1, source: hdmi-2, operation: switch }
+      - { id: call, type: workflow.invoke_rule, rule: announce }
+      - { id: done, type: notify.operator, message: Sequence complete }
+  - id: announce
+    name: Announce
+    armed: true
+    trigger: { type: api, name: never-called }
+    actions:
+      - { id: say, type: notify.operator, message: Starting }

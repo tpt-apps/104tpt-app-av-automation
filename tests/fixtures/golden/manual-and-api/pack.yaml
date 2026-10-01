@@ -1,0 +1,17 @@
+format_version: 1
+name: Operator
+revision: 1
+rules:
+  - id: panic
+    name: Panic button
+    armed: true
+    trigger: { type: manual }
+    actions:
+      - { id: alert, type: notify.operator, message: Panic, severity: critical }
+      - { id: incident, type: log.incident, severity: critical }
+  - id: remote-start
+    name: Remote start
+    armed: true
+    trigger: { type: api, name: start-show }
+    actions:
+      - { id: power, type: control.osc, device: projector-1, address: /power, args: [1] }

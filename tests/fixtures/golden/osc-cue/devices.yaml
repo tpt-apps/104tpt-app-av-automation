@@ -1,0 +1,2 @@
+devices:
+  - { id: projector-1, protocol: virtual, kind: display }

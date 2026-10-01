@@ -1,0 +1,9 @@
+steps:
+  - heartbeat: projector-1
+  - advance_ms: 4000
+  - tick
+  - advance_ms: 2000
+  - tick
+  - advance_ms: 60000
+  - tick
+  - heartbeat: projector-1

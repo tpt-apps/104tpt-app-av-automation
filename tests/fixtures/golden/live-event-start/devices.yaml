@@ -1,0 +1,4 @@
+devices:
+  - { id: lighting-rack, protocol: virtual, kind: lighting }
+  - { id: projector-1, protocol: virtual, kind: display }
+  - { id: audio-matrix, protocol: virtual, kind: audio }

@@ -171,6 +171,10 @@ pub struct ActionResultRecord {
     pub simulated: bool,
     /// Failure policy in force when this step ran.
     pub failure_policy: FailurePolicy,
+    /// What the step did or would do, e.g. `osc /power = 1 -> projector-1`. Always set for
+    /// simulated steps, so a simulation explains itself (spec §12.5).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
 }
 
 /// Per-condition record inside an [`ExecutionRecord`].

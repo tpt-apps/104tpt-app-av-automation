@@ -1,0 +1,2 @@
+steps:
+  - event: { kind: osc, address: /go, args: [] }

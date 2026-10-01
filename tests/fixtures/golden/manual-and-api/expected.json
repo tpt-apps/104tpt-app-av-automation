@@ -1,0 +1,151 @@
+{
+  "records": [
+    {
+      "action_results": [
+        {
+          "action_id": "alert",
+          "action_type": "notify.operator",
+          "detail": "notify.operator [critical] \"Panic\"",
+          "duration_ms": 0,
+          "failure_policy": "stop_chain",
+          "outcome": {
+            "status": "success"
+          },
+          "simulated": false
+        },
+        {
+          "action_id": "incident",
+          "action_type": "log.incident",
+          "detail": "log.incident severity=critical",
+          "duration_ms": 0,
+          "failure_policy": "stop_chain",
+          "outcome": {
+            "status": "success"
+          },
+          "simulated": false
+        }
+      ],
+      "condition_results": [],
+      "duration_ms": 0,
+      "execution_id": "exec-000001",
+      "overall_status": "success",
+      "rule_id": "panic",
+      "rule_name": "Panic button",
+      "rule_version": 1,
+      "simulated": false,
+      "trigger_detail": {
+        "kind": "manual",
+        "rule": null
+      },
+      "trigger_type": "manual",
+      "triggered_at_ms": 1704067200000
+    },
+    {
+      "action_results": [
+        {
+          "action_id": "power",
+          "action_type": "control.osc",
+          "detail": "osc /power = 1 -> projector-1",
+          "device": "projector-1",
+          "duration_ms": 0,
+          "failure_policy": "stop_chain",
+          "outcome": {
+            "status": "success"
+          },
+          "simulated": false
+        }
+      ],
+      "condition_results": [],
+      "duration_ms": 0,
+      "execution_id": "exec-000002",
+      "overall_status": "success",
+      "rule_id": "remote-start",
+      "rule_name": "Remote start",
+      "rule_version": 1,
+      "simulated": false,
+      "trigger_detail": {
+        "kind": "api",
+        "name": "start-show",
+        "payload": {}
+      },
+      "trigger_type": "api",
+      "triggered_at_ms": 1704067200000
+    },
+    {
+      "action_results": [
+        {
+          "action_id": "power",
+          "action_type": "control.osc",
+          "detail": "osc /power = 1 -> projector-1",
+          "device": "projector-1",
+          "duration_ms": 0,
+          "failure_policy": "stop_chain",
+          "outcome": {
+            "status": "success"
+          },
+          "simulated": false
+        }
+      ],
+      "condition_results": [],
+      "duration_ms": 0,
+      "execution_id": "exec-000003",
+      "overall_status": "success",
+      "rule_id": "remote-start",
+      "rule_name": "Remote start",
+      "rule_version": 1,
+      "simulated": false,
+      "trigger_detail": {
+        "kind": "manual",
+        "rule": "remote-start"
+      },
+      "trigger_type": "api",
+      "triggered_at_ms": 1704067200000
+    },
+    {
+      "action_results": [
+        {
+          "action_id": "alert",
+          "action_type": "notify.operator",
+          "detail": "notify.operator [critical] \"Panic\"",
+          "duration_ms": 0,
+          "failure_policy": "stop_chain",
+          "outcome": {
+            "status": "success"
+          },
+          "simulated": false
+        },
+        {
+          "action_id": "incident",
+          "action_type": "log.incident",
+          "detail": "log.incident severity=critical",
+          "duration_ms": 0,
+          "failure_policy": "stop_chain",
+          "outcome": {
+            "status": "success"
+          },
+          "simulated": false
+        }
+      ],
+      "condition_results": [],
+      "duration_ms": 0,
+      "execution_id": "exec-000004",
+      "overall_status": "success",
+      "rule_id": "panic",
+      "rule_name": "Panic button",
+      "rule_version": 1,
+      "simulated": false,
+      "trigger_detail": {
+        "kind": "manual",
+        "rule": "panic"
+      },
+      "trigger_type": "manual",
+      "triggered_at_ms": 1704067200000
+    }
+  ],
+  "sent": {
+    "projector-1": [
+      "osc /power = 1",
+      "osc /power = 1"
+    ]
+  }
+}

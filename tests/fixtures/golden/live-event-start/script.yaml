@@ -1,0 +1,12 @@
+steps:
+  - health: { device: projector-1, state: online }
+  - set_time: "18:54@mon"
+  - tick
+  - set_time: "18:55@mon"
+  - tick
+  - tick
+  - set_time: "18:55@sat"
+  - tick
+  - set_time: "18:55@tue"
+  - health: { device: projector-1, state: offline }
+  - tick

@@ -1,0 +1,25 @@
+format_version: 1
+name: Conflict
+revision: 1
+rules:
+  - id: zz-low
+    name: Low
+    armed: true
+    priority: low
+    trigger: { type: osc, address: /go }
+    actions:
+      - { id: set, type: control.osc, device: proj, address: /input, args: [1] }
+  - id: aa-critical
+    name: Critical
+    armed: true
+    priority: critical
+    trigger: { type: osc, address: /go }
+    actions:
+      - { id: set, type: control.osc, device: proj, address: /input, args: [2] }
+  - id: bb-normal
+    name: Normal
+    armed: true
+    trigger: { type: osc, address: /go }
+    actions:
+      - { id: set, type: control.osc, device: proj, address: /input, args: [2] }
+      - { id: other, type: control.osc, device: proj, address: /other, args: [5] }

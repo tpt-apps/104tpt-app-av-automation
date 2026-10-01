@@ -1,0 +1,5 @@
+steps:
+  - event: { kind: midi, channel: 0, message: note_on, number: 60, value: 127 }
+  - event: { kind: midi, channel: 1, message: note_on, number: 60, value: 127 }
+  - event: { kind: midi, channel: 0, message: note_off, number: 60, value: 0 }
+  - event: { kind: midi, channel: 3, message: program_change, number: 12, value: 0 }

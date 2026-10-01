@@ -1,0 +1,9 @@
+steps:
+  - event: { kind: osc, address: /go, args: [] }
+  - fault: { device: projector-1, offline: true }
+  - event: { kind: osc, address: /go, args: [] }
+  - fault: { device: projector-1 }
+  - arm: show
+  - event: { kind: osc, address: /go, args: [] }
+  - disarm: show
+  - event: { kind: osc, address: /go, args: [] }

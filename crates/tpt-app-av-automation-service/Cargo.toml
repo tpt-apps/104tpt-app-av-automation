@@ -8,7 +8,6 @@ license.workspace = true
 authors.workspace = true
 repository.workspace = true
 homepage.workspace = true
-readme = "README.md"
 
 [dependencies]
 tpt-app-av-automation-core = { workspace = true }
@@ -18,9 +17,18 @@ tpt-app-av-automation-devices = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
+midir = { workspace = true }
 tracing = { workspace = true }
+serde_yaml = { workspace = true }
+rusqlite = { workspace = true }
+ctrlc = { version = "3", features = ["termination"] }
+tpt-app-av-automation-actions = { workspace = true }
+tpt-app-av-automation-triggers = { workspace = true }
+tpt-app-av-automation-report = { workspace = true }
 
 [dev-dependencies]
+tpt-av-control-dmx = { workspace = true }
+tpt-av-control-osc = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
 

@@ -1,0 +1,50 @@
+# systemd unit for the headless TPT AV Automation engine, supervised by its own watchdog.
+#
+#   sudo install -m 0755 tpt-av-automation /usr/local/bin/
+#   sudo install -d -o tptav -g tptav /etc/tpt-av-automation /var/lib/tpt-av-automation
+#   sudo cp main-hall.yaml devices.yaml service.yaml /etc/tpt-av-automation/
+#   sudo cp tpt-av-automation.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now tpt-av-automation
+#
+# The in-process watchdog restarts the engine if it crashes; systemd restarts the watchdog (and so
+# the whole tree) if that ever dies. The engine exits 0 only on an intentional stop, which makes the
+# watchdog exit 0 too, and `Restart=on-failure` leaves an operator-requested stop alone.
+#
+# NOT YET VALIDATED on a Linux host: see docs/deployment.md.
+
+[Unit]
+Description=TPT AV Automation engine
+Documentation=https://github.com/tpt-apps/104tpt-app-av-automation
+After=network.target
+StartLimitIntervalSec=120
+StartLimitBurst=10
+
+[Service]
+Type=simple
+User=tptav
+Group=tptav
+ExecStart=/usr/local/bin/tpt-av-automation watchdog --max-restarts 10 -- \
+    run --service \
+    --rules /etc/tpt-av-automation/main-hall.yaml \
+    --devices /etc/tpt-av-automation/devices.yaml \
+    --config /etc/tpt-av-automation/service.yaml \
+    --state-dir /var/lib/tpt-av-automation
+Restart=on-failure
+RestartSec=2
+# SIGTERM reaches the watchdog, which stops the engine; the engine flushes its state on shutdown.
+KillMode=control-group
+TimeoutStopSec=20
+
+# Hardening. The engine needs to bind local sockets and write its state directory, nothing else.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/tpt-av-automation
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+LockPersonality=yes
+
+[Install]
+WantedBy=multi-user.target

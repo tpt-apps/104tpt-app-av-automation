@@ -10,97 +10,154 @@ Source of truth: `spec.txt`. Section references (`§`) point back to it.
 - Competitive differentiation (§2.2): native Rust, offline-first, unified live-control + media-pipeline rule engine, deterministic/versioned rules, simulation/dry-run, reliability as a feature, vendor-neutral, shared TPT foundation.
 - Strategic boundary (§23, §25): do NOT become a lighting console, DAW, video switcher, home-automation hub, or full BMS. Do not try to match Crestron/Q-SYS feature-for-feature in v1.
 
+## Legend
+
+`[x]` means implemented **and** covered by automated tests that pass. `[ ]` items carry a
+`Status` line saying exactly what exists and what is missing; nothing partial is ticked.
+Phase 4 and 5 are untouched.
+
 ---
 
 ## Phase 0 — Repository & Licensing Setup (§4, §17)
 
-- [ ] Initialize git repository and `.gitignore`
-- [ ] Create `LICENSE-MIT` (copyright holder: TPT Solutions)
-- [ ] Create `LICENSE-APACHE` (Apache-2.0, copyright holder: TPT Solutions)
-- [ ] Set `license = "MIT OR Apache-2.0"` in workspace `Cargo.toml`
-- [ ] Scaffold repo structure per §4: `crates/`, `rules/{examples,live-event,media-pipeline,failover}/`, `tests/{fixtures,virtual-devices,integration,chaos}/`, `docs/`
-- [ ] Add root `README.md`, `CHANGELOG.md`, `CONTRIBUTING.md`
-- [ ] Stub `docs/architecture.md`
-- [ ] Stub `docs/rule-model.md`
-- [ ] Stub `docs/trigger-catalogue.md`
-- [ ] Stub `docs/action-catalogue.md`
-- [ ] Stub `docs/rule-format.md`
-- [ ] Stub `docs/reliability.md`
-- [ ] Stub `docs/integrations.md`
-- [ ] Confirm commercial/open-source boundary (§17): `tpt-app-av-automation` (commercial) stays separate from open TPT foundation crates (`tpt-av-control`, `tpt-kinetix`, `tpt-cadence`, `tpt-audio`, `tpt-dsp`, `tpt-visual`, `tpt-av-sync`, `tpt-av-asset`, `tpt-av-test`)
+- [x] Initialize git repository and `.gitignore`
+- [x] Create `LICENSE-MIT` (copyright holder: TPT Solutions)
+- [x] Create `LICENSE-APACHE` (Apache-2.0, copyright holder: TPT Solutions)
+- [x] Set `license = "MIT OR Apache-2.0"` in workspace `Cargo.toml`
+- [x] Scaffold repo structure per §4: `crates/`, `rules/{examples,live-event,media-pipeline,failover}/`, `tests/{fixtures,virtual-devices,integration,chaos}/`, `docs/`
+- [x] Add root `README.md`, `CHANGELOG.md`, `CONTRIBUTING.md`
+- [x] Stub `docs/architecture.md`
+  - _Status:_ written in full, not just stubbed.
+- [x] Stub `docs/rule-model.md`
+  - _Status:_ written in full.
+- [x] Stub `docs/trigger-catalogue.md`
+  - _Status:_ written in full.
+- [x] Stub `docs/action-catalogue.md`
+  - _Status:_ written in full.
+- [x] Stub `docs/rule-format.md`
+  - _Status:_ written in full.
+- [x] Stub `docs/reliability.md`
+  - _Status:_ written in full.
+- [x] Stub `docs/integrations.md`
+  - _Status:_ written in full (plus `docs/deployment.md`).
+- [x] Confirm commercial/open-source boundary (§17): `tpt-app-av-automation` (commercial) stays separate from open TPT foundation crates (`tpt-av-control`, `tpt-kinetix`, `tpt-cadence`, `tpt-audio`, `tpt-dsp`, `tpt-visual`, `tpt-av-sync`, `tpt-av-asset`, `tpt-av-test`)
+  - _Status:_ foundation crates are consumed by path only; no foundation code is copied here (README, CONTRIBUTING).
 
 ## Phase 1 — MVP Build (§19, §24.1 steps 1–15)
 
-- [ ] Establish Cargo workspace and application shell (crates listed in §4: core, model, triggers, conditions, actions, engine, devices, report, cli, service, tauri, test)
-- [ ] Integrate `tpt-av-control` and enumerate supported protocols (§5.1)
-- [ ] Implement the device/endpoint registry (§6.5)
-- [ ] Implement the rule/trigger/condition/action domain model (§6.1–§6.4, §6.6)
-- [ ] Implement the YAML rule-pack parser and validator, with versioning (§9)
-- [ ] Implement the deterministic evaluation core with virtual-device test support (§3.2, §10)
-- [ ] Implement simulation mode end to end — armed/disarmed default-disarmed behaviour (§3.5, §12.5)
-- [ ] Implement OSC inbound/outbound trigger + action (§7.2, §8.1)
+- [ ] Establish Cargo workspace and application shell (crates listed in §4: core, model, triggers, conditions, actions, engine, devices, report, cli, service, test — stubs in place; `tauri` crate still to add)
+  - _Status:_ all crates exist and build except `tauri`, which is excluded from the workspace and not started (see the desktop UI items).
+- [x] Integrate `tpt-av-control` and enumerate supported protocols (§5.1)
+  - _Status:_ OSC, MIDI and DMX/Art-Net/sACN codecs are used; the control-surface crate is not (no surface triggers yet). Supported protocols are listed in `docs/integrations.md`.
+- [x] Implement the device/endpoint registry (§6.5)
+- [x] Implement the rule/trigger/condition/action domain model (§6.1–§6.4, §6.6) — `model` crate, with validation and integration tests
+- [x] Implement the YAML rule-pack parser and validator, with versioning (§9) — in progress: model types, `pack`, and `validate` (steps + cross-reference checks) exist; verify parser/versioning coverage
+- [x] Implement the deterministic evaluation core with virtual-device test support (§3.2, §10)
+- [x] Implement simulation mode end to end — armed/disarmed default-disarmed behaviour (§3.5, §12.5)
+  - _Status:_ engine, CLI, service and API; the always-visible UI indicator waits on the desktop UI.
+- [x] Implement OSC inbound/outbound trigger + action (§7.2, §8.1)
 - [ ] Implement MIDI (1.0/2.0) inbound/outbound trigger + action (§7.2, §8.1)
-- [ ] Implement DMX/Art-Net/sACN channel-change trigger + output action (§7.2, §8.1)
-- [ ] Implement schedule trigger (cron-like, interval, one-shot) (§7.1)
-- [ ] Implement device online/offline/degraded trigger + heartbeat-missed trigger (§7.3, §11)
-- [ ] Implement manual/API-invoked trigger (§7.6)
-- [ ] Implement notify-operator action (§8.3)
-- [ ] Implement log-incident action (§8.3)
+  - _Status:_ MIDI 1.0 in/out is implemented and tested, but live ports (`midir`, by name) have **not** been tested against hardware, and MIDI 2.0/UMP is not implemented.
+- [x] Implement DMX/Art-Net/sACN channel-change trigger + output action (§7.2, §8.1)
+  - _Status:_ Art-Net and sACN in and out, tested over real sockets; serial DMX512 transport is not implemented.
+- [x] Implement schedule trigger (cron-like, interval, one-shot) (§7.1)
+  - _Status:_ fixed time + weekdays, interval and one-shot; full cron expressions and sunrise/sunset are not supported.
+- [x] Implement device online/offline/degraded trigger + heartbeat-missed trigger (§7.3, §11)
+- [x] Implement manual/API-invoked trigger (§7.6)
+- [x] Implement notify-operator action (§8.3)
+  - _Status:_ delivers to a notifier sink (process log); desktop toasts/sound wait on the UI.
+- [x] Implement log-incident action (§8.3)
+  - _Status:_ persisted to SQLite and exposed at `GET /incidents`.
 - [ ] Integrate `tpt-kinetix` for media start/stop/switch actions (§5.1, §8.2)
-- [ ] Implement SQLite persistence for rule packs + version history, device registry, execution history, user preferences (§15)
-- [ ] Implement headless service/daemon mode (§3.6, §11)
-- [ ] Implement lightweight watchdog process supervising the engine (§11)
-- [ ] Implement device heartbeat monitoring feeding offline/degraded triggers (§11)
-- [ ] Implement state persistence across restart (no duplicate one-shot firing) (§11)
-- [ ] Implement conflict resolution for concurrent/conflicting action targets (§10.1)
-- [ ] Implement running-chain cancellation by operator (§10.2)
-- [ ] Implement CLI: `validate`, `simulate`, `run --service`, stable exit-code contract (0–6) (§13)
+  - _Status:_ not integrated: `tpt-kinetix` is a codec/pipeline library with no source start/stop/switch API. `media.*` actions are parsed, validated, simulated and routed to an `Endpoint`, but no backend implements them (they fail loudly). See `docs/integrations.md`.
+- [x] Implement SQLite persistence for rule packs + version history, device registry, execution history, user preferences (§15)
+- [x] Implement headless service/daemon mode (§3.6, §11)
+- [x] Implement lightweight watchdog process supervising the engine (§11)
+- [x] Implement device heartbeat monitoring feeding offline/degraded triggers (§11)
+  - _Status:_ network devices are kept alive by any valid datagram from their address; `virtual`/`midi` endpoints are probed.
+- [x] Implement state persistence across restart (no duplicate one-shot firing) (§11)
+  - _Status:_ schedule firings are written ahead of their actions, so one-shots are at-most-once even across a hard kill.
+- [x] Implement conflict resolution for concurrent/conflicting action targets (§10.1)
+- [x] Implement running-chain cancellation by operator (§10.2)
+  - _Status:_ via `CancelHandle` and `POST /executions/:id/cancel`.
+- [x] Implement CLI: `validate`, `simulate`, `run --service`, stable exit-code contract (0–6) (§13)
 - [ ] Implement desktop dashboard (active rules, device health, recent executions, active chains, system status) (§12.1)
+  - _Status:_ not started (Tauri). The engine, API and `/health` already expose the data it needs.
 - [ ] Implement execution log / timeline UI with filters and rule drill-down (§12.4)
+  - _Status:_ not started (Tauri). Filtering exists in `report::Filter`, `GET /executions` and `history`.
 - [ ] Implement device manager UI (list, health, config, last-seen, manual ping) (§12.3)
+  - _Status:_ not started (Tauri). `GET /devices` and the device file cover the data.
 - [ ] Implement YAML-backed visual rule builder (trigger→condition→action canvas, round-trips to YAML) (§12.2)
-- [ ] Implement local API, disabled by default, `127.0.0.1`-only, token auth when enabled (`/rules`, `/devices`, `/executions`, `/health`, `/events` WS) (§14)
-- [ ] Implement inbound control-message validation + rate limiting/backoff (§16)
-- [ ] Implement sandboxed, timeout-bounded external-script/subprocess action (§8.4)
+  - _Status:_ not started (Tauri). The YAML format round-trips (`RulePack::to_yaml_string`).
+- [x] Implement local API, disabled by default, `127.0.0.1`-only, token auth when enabled (`/rules`, `/devices`, `/executions`, `/health`, `/events` WS) (§14)
+  - _Status:_ REST plus the `/events` WebSocket; also `/incidents` and execution cancel.
+- [x] Implement inbound control-message validation + rate limiting/backoff (§16)
+  - _Status:_ validation and per-source rate limiting; there is no adaptive backoff.
+- [x] Implement sandboxed, timeout-bounded external-script/subprocess action (§8.4)
+  - _Status:_ disabled by default; allow-list only; see `docs/action-catalogue.md`.
 
 ## Phase 2 — Testing Strategy (§18)
 
 - [ ] Unit tests for every trigger/condition/action: valid, invalid, boundary, malformed input cases (§18.1)
-- [ ] Build virtual/simulated device fixtures: OSC, MIDI, DMX, Art-Net, sACN, media-sources, with fault injection (dropped/delayed/offline) (§18.2)
-- [ ] Build golden rule-pack regression tests with recorded event sequences and expected execution traces (§18.3)
-- [ ] Chaos test: device goes offline mid-action-chain (§18.4)
-- [ ] Chaos test: engine process killed mid-execution, restarted via watchdog (§18.4)
-- [ ] Chaos test: conflicting rules firing on same event (§18.4)
-- [ ] Chaos test: malformed inbound control message (§18.4)
-- [ ] Chaos test: network interruption during action execution (§18.4)
+  - _Status:_ broad coverage (model, conditions, endpoints, inbound, golden), but no per-item valid/invalid/boundary/malformed matrix has been audited, so this stays open.
+- [x] Build virtual/simulated device fixtures: OSC, MIDI, DMX, Art-Net, sACN, media-sources, with fault injection (dropped/delayed/offline) (§18.2)
+  - _Status:_ `VirtualEndpoint` (any protocol) with dropped, delayed, timed-out and offline-after-N faults; inbound sources are driven over real loopback sockets.
+- [x] Build golden rule-pack regression tests with recorded event sequences and expected execution traces (§18.3)
+  - _Status:_ 11 fixtures in `tests/fixtures/golden`, plus semantic assertions that pin their meaning.
+- [x] Chaos test: device goes offline mid-action-chain (§18.4)
+- [x] Chaos test: engine process killed mid-execution, restarted via watchdog (§18.4)
+  - _Status:_ `the_watchdog_restarts_a_forcibly_killed_engine` (kills the engine twice).
+- [x] Chaos test: conflicting rules firing on same event (§18.4)
+- [x] Chaos test: malformed inbound control message (§18.4)
+  - _Status:_ parser level and over a live UDP listener.
+- [x] Chaos test: network interruption during action execution (§18.4)
+  - _Status:_ simulated with injected timeouts/delays/dropouts, not by cutting a real network.
 - [ ] Fuzz the YAML rule parser (§18.5)
+  - _Status:_ seeded mutation tests run in CI (`tests/fuzz.rs`); coverage-guided fuzzing (`cargo fuzz`, nightly) is not set up.
 - [ ] Fuzz inbound OSC/MIDI/DMX message parsing (§18.5)
+  - _Status:_ seeded mutation tests over OSC, bundles, MIDI, Art-Net and sACN; coverage-guided fuzzing not set up.
 - [ ] Fuzz local API request handling (§18.5)
-- [ ] Establish permanent-regression-fixture policy for production bugs (§18.6)
+  - _Status:_ mutation/truncation tests of the HTTP parser; coverage-guided fuzzing not set up.
+- [x] Establish permanent-regression-fixture policy for production bugs (§18.6)
+  - _Status:_ `CONTRIBUTING.md` and `tests/fixtures/regression/`, replayed by the golden suite.
 
 ## Phase 3 — Hardening & Release (§24.1 steps 20–23, §24 Definition of Done)
 
 - [ ] Benchmark and profile under sustained live-event-like event load
+  - _Status:_ throughput benchmark done (≈265k events/s release, `docs/reliability.md`); no profiler run, no device-latency measurements.
 - [ ] Harden error handling and failure isolation
-- [ ] Package Windows release
+  - _Status:_ panic isolation, bounded queues/cascades/history, persistence-failure isolation are in; a systematic audit is still to do.
+- [x] Package Windows release
+  - _Status:_ `scripts/package-windows.ps1` builds a static-CRT zip with SHA-256 and smoke-tests it; unsigned, no installer or Windows-service wrapper.
 - [ ] Validate headless Linux service deployment
+  - _Status:_ unit file and docs written (`scripts/tpt-av-automation.service`); never run on Linux.
 - [ ] Test clean-machine installation (no dev tooling required)
+  - _Status:_ the package imports only always-present Windows DLLs, but it has not been tried on a fresh machine/VM.
 - [ ] Verify Definition of Done checklist (§24):
-  - [ ] Rule pack authored (YAML or visual builder) validates without errors
+  - [x] Rule pack authored (YAML or visual builder) validates without errors
+    - _Status:_ YAML; the visual builder waits on the desktop UI.
   - [ ] Rules arm/disarm with state always visible in UI
-  - [ ] Simulation mode never sends a real control message or media action
-  - [ ] Engine runs headless as supervised service and survives forced restart without duplicate one-shot firing
+    - _Status:_ arm/disarm and state are visible through the API, `/health` and execution records; no UI yet.
+  - [x] Simulation mode never sends a real control message or media action
+    - _Status:_ `simulation_never_sends_a_real_control_message_even_for_armed_rules` (real UDP receiver), plus engine and golden tests.
+  - [x] Engine runs headless as supervised service and survives forced restart without duplicate one-shot firing
+    - _Status:_ watchdog kill test + write-ahead state + restart tests; the kill-during-a-one-shot combination is verified by its parts, not as one automated scenario.
   - [ ] OSC, MIDI, and at least one of DMX/Art-Net/sACN trigger and are triggered end to end
+    - _Status:_ OSC and Art-Net are verified end to end over sockets (in and out); MIDI logic is tested but no physical MIDI port has been exercised.
   - [ ] Media action starts/stops/switches a source via `tpt-kinetix`
-  - [ ] Device health (online/degraded/offline) tracked and can itself trigger a rule
-  - [ ] Every execution logged with trigger detail, condition results, per-action outcomes
-  - [ ] Partially failed action chain reported as partial failure, never full success
+    - _Status:_ see the `tpt-kinetix` item above.
+  - [x] Device health (online/degraded/offline) tracked and can itself trigger a rule
+  - [x] Every execution logged with trigger detail, condition results, per-action outcomes
+  - [x] Partially failed action chain reported as partial failure, never full success
   - [ ] CLI validates/simulates/runs same rule packs as GUI
-  - [ ] Local API disabled by default; requires token when enabled
-  - [ ] Malformed inbound control message cannot crash the engine
-  - [ ] Golden rule-pack tests and virtual-device tests cover every MVP trigger/action
-  - [ ] Chaos tests confirm watchdog restarts engine after forced kill
-  - [ ] No internet connection required for core operation
+    - _Status:_ CLI, service and (future) GUI share one engine, but there is no GUI yet.
+  - [x] Local API disabled by default; requires token when enabled
+  - [x] Malformed inbound control message cannot crash the engine
+  - [x] Golden rule-pack tests and virtual-device tests cover every MVP trigger/action
+    - _Status:_ `golden_fixtures_exercise_every_mvp_trigger_and_action` enforces it.
+  - [x] Chaos tests confirm watchdog restarts engine after forced kill
+  - [x] No internet connection required for core operation
+    - _Status:_ by construction: nothing in the workspace opens an outbound connection on its own. Not separately tested on a machine with networking disabled.
 - [ ] Run a private beta with a real venue or integrator
 
 ## Phase 4 — Post-MVP Phase 2 (§20 Phase 2, §22 Studio tier)

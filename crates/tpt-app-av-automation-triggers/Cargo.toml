@@ -17,6 +17,9 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
+tpt-av-control-osc = { workspace = true }
+tpt-av-control-midi = { workspace = true }
+tpt-av-control-dmx = { workspace = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }

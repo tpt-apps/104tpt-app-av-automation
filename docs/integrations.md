@@ -1,0 +1,71 @@
+# Integrations
+
+## Foundation crates (spec §5.1)
+
+| Crate | Used for | Status |
+|-------|----------|--------|
+| `tpt-av-control-osc` | OSC encode/decode (inbound triggers, outbound actions) | integrated |
+| `tpt-av-control-midi` | MIDI 1.0 encode/parse (triggers and actions) | integrated. Live ports are opened by name through `midir` (see below) — **not tested against real hardware**; MIDI 2.0/UMP is not used yet |
+| `tpt-av-control-dmx` | ArtDmx and E1.31 packet build/parse | integrated |
+| `tpt-av-control-utils` | shared error type | transitively |
+| `tpt-kinetix` | media start/stop/switch | **not integrated** — it is a codec/pipeline library with no source-control API to call |
+| `tpt-cadence` | audio routing | not integrated |
+| `tpt-visual`, `tpt-audio`/`tpt-dsp`, `tpt-av-sync` | signal-condition triggers | Phase 2 |
+| `tpt-av-asset` | watch folders, jobs | Phase 2 |
+| `tpt-av-test` | virtual-device fixtures | this repo has its own (`devices::VirtualEndpoint`) |
+
+The workspace references the `tpt-av-control-*` crates by path (`../tpt-av-control/…`), so check the
+two repositories out side by side.
+
+## MIDI ports
+
+`tpt-av-control-midi`'s own port helpers number output ports in a way that does not line up with
+`open_output`, so live ports are opened **by name** with `midir` directly
+(`devices::midi_port`). Names are matched as case-insensitive substrings:
+
+```yaml
+# devices.yaml — outbound
+- { id: synth, protocol: midi, address: "USB MIDI" }
+# service.yaml — inbound
+listeners:
+  - { protocol: midi, bind: "USB MIDI" }
+```
+
+Both connect lazily and keep retrying, so a replugged interface recovers without restarting the
+engine. The encoding, range validation, reconnect logic and "no such port" paths are unit-tested;
+sending to and receiving from a physical MIDI interface has **not** been verified in an automated
+test, because CI has none.
+
+## Adding a device backend
+
+Implement `devices::Endpoint` (`send(&Command)`, optional `ping()`), build it in
+`devices::build_endpoint` (or bind it to a device id with `Actions::bind_endpoint`). A kinetix or
+cadence backend is exactly this.
+
+## Local API (spec §14)
+
+Disabled by default. Enable in `service.yaml`:
+
+```yaml
+api: { enabled: true, bind: "127.0.0.1:8787", token: "a-token-of-16+-characters" }
+```
+
+The bind address **must** be a loopback address (anything else fails validation), and a token of at
+least 16 characters is required. Every request needs `Authorization: Bearer <token>`; requests whose
+`Host` or `Origin` is not loopback are refused.
+
+| Method | Path | |
+|--------|------|-|
+| GET | `/health` | status (`nominal`/`degraded`/`offline`), mode, rule and device counts, rejected-traffic counters |
+| GET | `/rules` | id, name, version, **armed**, priority, trigger, tags |
+| GET | `/devices` | id, protocol, health, last seen |
+| GET | `/executions` | `rule`, `status`, `device`, `simulated`, `since`, `until`, `limit` (≤ 1000) |
+| GET | `/incidents` | the persistent incident log written by `log.incident`, newest first (`limit` ≤ 1000) |
+| POST | `/rules/:id/arm` · `/disarm` · `/run` | `run` returns machine results |
+| POST | `/executions/:id/cancel` | cancel a running chain |
+| GET | `/events` | WebSocket: one JSON execution record per message |
+
+## Sibling TPT apps (spec §5.2)
+
+QC/Forensics events and Commissioning inventory import are Phase 2 (`todo.md`). Nothing in the
+engine depends on a sibling app being installed.

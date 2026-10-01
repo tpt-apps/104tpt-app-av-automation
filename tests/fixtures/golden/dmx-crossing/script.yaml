@@ -1,0 +1,7 @@
+steps:
+  - event: { kind: dmx, universe: 1, channel: 4, value: 50 }
+  - event: { kind: dmx, universe: 1, channel: 4, value: 150 }
+  - event: { kind: dmx, universe: 1, channel: 0, value: 255 }
+  - event: { kind: dmx, universe: 1, channel: 4, value: 20 }
+  - event: { kind: dmx, universe: 1, channel: 4, value: 101 }
+  - event: { kind: dmx, universe: 1, channel: 4, value: 200 }

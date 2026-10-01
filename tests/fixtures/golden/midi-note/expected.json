@@ -1,0 +1,104 @@
+{
+  "records": [
+    {
+      "action_results": [
+        {
+          "action_id": "echo",
+          "action_type": "control.midi",
+          "detail": "midi ch1 note_on 64 100 -> synth",
+          "device": "synth",
+          "duration_ms": 0,
+          "failure_policy": "stop_chain",
+          "outcome": {
+            "status": "success"
+          },
+          "simulated": false
+        },
+        {
+          "action_id": "cc",
+          "action_type": "control.midi",
+          "detail": "midi ch1 cc 7 90 -> synth",
+          "device": "synth",
+          "duration_ms": 0,
+          "failure_policy": "stop_chain",
+          "outcome": {
+            "status": "success"
+          },
+          "simulated": false
+        },
+        {
+          "action_id": "osc",
+          "action_type": "control.osc",
+          "detail": "osc /go = 1 -> mixer",
+          "device": "mixer",
+          "duration_ms": 0,
+          "failure_policy": "stop_chain",
+          "outcome": {
+            "status": "success"
+          },
+          "simulated": false
+        }
+      ],
+      "condition_results": [],
+      "duration_ms": 0,
+      "execution_id": "exec-000001",
+      "overall_status": "success",
+      "rule_id": "go-button",
+      "rule_name": "Go button",
+      "rule_version": 1,
+      "simulated": false,
+      "trigger_detail": {
+        "channel": 0,
+        "kind": "midi",
+        "message": "note_on",
+        "number": 60,
+        "value": 127
+      },
+      "trigger_type": "midi",
+      "triggered_at_ms": 1704067200000
+    },
+    {
+      "action_results": [
+        {
+          "action_id": "recall",
+          "action_type": "control.midi",
+          "detail": "midi ch0 program_change 5 0 -> synth",
+          "device": "synth",
+          "duration_ms": 0,
+          "failure_policy": "stop_chain",
+          "outcome": {
+            "status": "success"
+          },
+          "simulated": false
+        }
+      ],
+      "condition_results": [],
+      "duration_ms": 0,
+      "execution_id": "exec-000002",
+      "overall_status": "success",
+      "rule_id": "program",
+      "rule_name": "Program change",
+      "rule_version": 1,
+      "simulated": false,
+      "trigger_detail": {
+        "channel": 3,
+        "kind": "midi",
+        "message": "program_change",
+        "number": 12,
+        "value": 0
+      },
+      "trigger_type": "midi",
+      "triggered_at_ms": 1704067200000
+    }
+  ],
+  "sent": {
+    "mixer": [
+      "osc /go = 1"
+    ],
+    "synth": [
+      "midi ch1 note_on 64 100",
+      "midi ch1 cc 7 90",
+      "midi ch0 program_change 5 0"
+    ]
+  }
+}

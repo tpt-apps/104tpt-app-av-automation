@@ -1,0 +1,130 @@
+{
+  "records": [
+    {
+      "action_results": [
+        {
+          "action_id": "switch-input",
+          "action_type": "control.osc",
+          "detail": "osc /switcher/main/input = 2 -> switcher",
+          "device": "switcher",
+          "duration_ms": 0,
+          "failure_policy": "run_fallback",
+          "outcome": {
+            "reason": "device unreachable: virtual device offline",
+            "status": "failed"
+          },
+          "simulated": false
+        },
+        {
+          "action_id": "tell-operator",
+          "action_type": "notify.operator",
+          "duration_ms": 0,
+          "failure_policy": "run_fallback",
+          "outcome": {
+            "reason": "replaced by fallback after failure of `switch-input`",
+            "status": "skipped"
+          },
+          "simulated": false
+        },
+        {
+          "action_id": "incident",
+          "action_type": "log.incident",
+          "duration_ms": 0,
+          "failure_policy": "run_fallback",
+          "outcome": {
+            "reason": "replaced by fallback after failure of `switch-input`",
+            "status": "skipped"
+          },
+          "simulated": false
+        },
+        {
+          "action_id": "escalate",
+          "action_type": "notify.operator",
+          "detail": "notify.operator [critical] \"Manual intervention required\"",
+          "duration_ms": 0,
+          "failure_policy": "run_fallback",
+          "outcome": {
+            "status": "success"
+          },
+          "simulated": false
+        }
+      ],
+      "condition_results": [],
+      "duration_ms": 0,
+      "execution_id": "exec-000001",
+      "overall_status": "partial_failure",
+      "rule_id": "display-failover",
+      "rule_name": "Main Display Failover",
+      "rule_version": 1,
+      "simulated": false,
+      "trigger_detail": {
+        "current": "offline",
+        "device": "display-1",
+        "kind": "device_state",
+        "previous": "online"
+      },
+      "trigger_type": "device_state",
+      "triggered_at_ms": 1704067200000
+    },
+    {
+      "action_results": [
+        {
+          "action_id": "switch-input",
+          "action_type": "control.osc",
+          "detail": "osc /switcher/main/input = 2 -> switcher",
+          "device": "switcher",
+          "duration_ms": 0,
+          "failure_policy": "run_fallback",
+          "outcome": {
+            "status": "success"
+          },
+          "simulated": false
+        },
+        {
+          "action_id": "tell-operator",
+          "action_type": "notify.operator",
+          "detail": "notify.operator [high] \"Switched to backup input\"",
+          "duration_ms": 0,
+          "failure_policy": "run_fallback",
+          "outcome": {
+            "status": "success"
+          },
+          "simulated": false
+        },
+        {
+          "action_id": "incident",
+          "action_type": "log.incident",
+          "detail": "log.incident severity=high",
+          "duration_ms": 0,
+          "failure_policy": "run_fallback",
+          "outcome": {
+            "status": "success"
+          },
+          "simulated": false
+        }
+      ],
+      "condition_results": [],
+      "duration_ms": 0,
+      "execution_id": "exec-000002",
+      "overall_status": "success",
+      "rule_id": "display-failover",
+      "rule_name": "Main Display Failover",
+      "rule_version": 1,
+      "simulated": false,
+      "trigger_detail": {
+        "current": "offline",
+        "device": "display-1",
+        "kind": "device_state",
+        "previous": "online"
+      },
+      "trigger_type": "device_state",
+      "triggered_at_ms": 1704067200000
+    }
+  ],
+  "sent": {
+    "display-1": [],
+    "switcher": [
+      "osc /switcher/main/input = 2"
+    ]
+  }
+}

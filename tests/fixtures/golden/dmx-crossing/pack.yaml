@@ -1,0 +1,13 @@
+format_version: 1
+name: DMX
+revision: 1
+rules:
+  - id: fader-up
+    name: Fader crossed 100
+    armed: true
+    trigger: { type: dmx, universe: 1, channel: 4, comparison: crossed_above, value: 100 }
+    conditions:
+      - { id: master-up, type: dmx_channel, universe: 1, channel: 0, comparison: gte, value: 200 }
+    actions:
+      - { id: channels, type: control.dmx_channels, device: node, universe: 2, start_channel: 10, values: [255, 128, 0], transport: art_net }
+      - { id: universe, type: control.dmx_universe, device: node, universe: 3, values: [1, 2, 3], transport: sacn }

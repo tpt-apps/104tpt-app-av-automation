@@ -1,0 +1,22 @@
+format_version: 1
+name: Heartbeat
+revision: 1
+rules:
+  - id: lost
+    name: Projector silent
+    armed: true
+    trigger: { type: heartbeat_missed, device: projector-1, after_ms: 5000 }
+    actions:
+      - { id: incident, type: log.incident, severity: high }
+  - id: offline
+    name: Projector offline
+    armed: true
+    trigger: { type: device_state, device: projector-1, state: offline }
+    actions:
+      - { id: alert, type: notify.operator, message: Projector offline, severity: high }
+  - id: back
+    name: Projector back
+    armed: true
+    trigger: { type: device_state, device: projector-1, state: online }
+    actions:
+      - { id: alert, type: notify.operator, message: Projector recovered }

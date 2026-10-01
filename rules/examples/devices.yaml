@@ -1,0 +1,30 @@
+# Device registry for the example packs. Network devices are reached over UDP; `virtual` devices
+# record commands in memory and are handy for rehearsing a pack without hardware.
+devices:
+  - id: lighting-rack
+    name: Lighting Rack
+    kind: lighting
+    protocol: artnet
+    address: 127.0.0.1:6454
+    heartbeat_ms: 15000
+    scenes:
+      house-to-half: { universe: 1, start_channel: 0, values: [128, 128, 128, 128] }
+  - id: projector-1
+    name: Projector 1
+    kind: display
+    protocol: osc
+    address: 127.0.0.1:9000
+    heartbeat_ms: 15000
+  - id: audio-matrix
+    name: Audio Matrix
+    kind: audio
+    protocol: virtual
+  - id: switcher
+    name: Video Switcher
+    kind: switcher
+    protocol: osc
+    address: 127.0.0.1:9001
+  - id: display-1
+    name: Main Display
+    kind: display
+    protocol: virtual

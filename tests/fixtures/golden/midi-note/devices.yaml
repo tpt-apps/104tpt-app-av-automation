@@ -1,0 +1,3 @@
+devices:
+  - { id: synth, protocol: virtual }
+  - { id: mixer, protocol: virtual }

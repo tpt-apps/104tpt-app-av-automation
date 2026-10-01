@@ -1,0 +1,6 @@
+steps:
+  - event: { kind: manual, rule: null }
+  - event: { kind: api, name: start-show, payload: {} }
+  - event: { kind: api, name: something-else, payload: {} }
+  - run: remote-start
+  - event: { kind: manual, rule: panic }

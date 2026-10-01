@@ -1,0 +1,7 @@
+steps:
+  - event: { kind: osc, address: /cue/1, args: [1] }
+  - event: { kind: osc, address: /cue/1, args: [2] }
+  - event: { kind: osc, address: /cue/2, args: [1] }
+  - event: { kind: osc, address: /channel/7/mute, args: [1] }
+  - event: { kind: osc, address: /channel/7/mute, args: [] }
+  - event: { kind: osc, address: /channel/7/fader/mute, args: [1] }

@@ -1,0 +1,17 @@
+format_version: 1
+name: Failover
+revision: 1
+rules:
+  - id: display-failover
+    name: Main Display Failover
+    armed: true
+    priority: critical
+    trigger: { type: device_state, device: display-1, state: offline }
+    actions:
+      - { id: switch-input, type: control.osc, device: switcher, address: /switcher/main/input, args: [2] }
+      - { id: tell-operator, type: notify.operator, message: Switched to backup input, severity: high }
+      - { id: incident, type: log.incident, severity: high }
+    policy:
+      on_failure: run_fallback
+      fallback:
+        - { id: escalate, type: notify.operator, message: Manual intervention required, severity: critical }

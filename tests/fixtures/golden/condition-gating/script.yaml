@@ -1,0 +1,12 @@
+steps:
+  - set_time: "10:00@mon"
+  - event: { kind: manual, rule: null }
+  - event: { kind: device_parameter, device: projector-1, parameter: temperature, value: 80 }
+  - event: { kind: device_parameter, device: projector-1, parameter: lamp_hours, value: 1500 }
+  - event: { kind: device_parameter, device: projector-1, parameter: temperature, value: 80 }
+  - event: { kind: device_parameter, device: projector-1, parameter: temperature, value: 60 }
+  - health: { device: projector-1, state: online }
+  - set_time: "19:30@mon"
+  - event: { kind: manual, rule: null }
+  - health: { device: projector-1, state: degraded }
+  - event: { kind: manual, rule: null }

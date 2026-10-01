@@ -1,0 +1,116 @@
+{
+  "records": [
+    {
+      "action_results": [
+        {
+          "action_id": "set",
+          "action_type": "control.osc",
+          "detail": "osc /input = 2 -> proj",
+          "device": "proj",
+          "duration_ms": 0,
+          "failure_policy": "stop_chain",
+          "outcome": {
+            "status": "success"
+          },
+          "simulated": false
+        }
+      ],
+      "condition_results": [],
+      "duration_ms": 0,
+      "execution_id": "exec-000001",
+      "overall_status": "success",
+      "rule_id": "aa-critical",
+      "rule_name": "Critical",
+      "rule_version": 1,
+      "simulated": false,
+      "trigger_detail": {
+        "address": "/go",
+        "args": [],
+        "kind": "osc"
+      },
+      "trigger_type": "osc",
+      "triggered_at_ms": 1704067200000
+    },
+    {
+      "action_results": [
+        {
+          "action_id": "set",
+          "action_type": "control.osc",
+          "detail": "osc /input = 2 -> proj",
+          "device": "proj",
+          "duration_ms": 0,
+          "failure_policy": "stop_chain",
+          "outcome": {
+            "status": "success"
+          },
+          "simulated": false
+        },
+        {
+          "action_id": "other",
+          "action_type": "control.osc",
+          "detail": "osc /other = 5 -> proj",
+          "device": "proj",
+          "duration_ms": 0,
+          "failure_policy": "stop_chain",
+          "outcome": {
+            "status": "success"
+          },
+          "simulated": false
+        }
+      ],
+      "condition_results": [],
+      "duration_ms": 0,
+      "execution_id": "exec-000002",
+      "overall_status": "success",
+      "rule_id": "bb-normal",
+      "rule_name": "Normal",
+      "rule_version": 1,
+      "simulated": false,
+      "trigger_detail": {
+        "address": "/go",
+        "args": [],
+        "kind": "osc"
+      },
+      "trigger_type": "osc",
+      "triggered_at_ms": 1704067200000
+    },
+    {
+      "action_results": [
+        {
+          "action_id": "set",
+          "action_type": "control.osc",
+          "device": "proj",
+          "duration_ms": 0,
+          "failure_policy": "stop_chain",
+          "outcome": {
+            "reason": "conflict on device `proj`: slot already written by rule `aa-critical` (critical priority)",
+            "status": "skipped"
+          },
+          "simulated": false
+        }
+      ],
+      "condition_results": [],
+      "duration_ms": 0,
+      "execution_id": "exec-000003",
+      "overall_status": "skipped",
+      "rule_id": "zz-low",
+      "rule_name": "Low",
+      "rule_version": 1,
+      "simulated": false,
+      "trigger_detail": {
+        "address": "/go",
+        "args": [],
+        "kind": "osc"
+      },
+      "trigger_type": "osc",
+      "triggered_at_ms": 1704067200000
+    }
+  ],
+  "sent": {
+    "proj": [
+      "osc /input = 2",
+      "osc /input = 2",
+      "osc /other = 5"
+    ]
+  }
+}

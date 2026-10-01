@@ -1,0 +1,130 @@
+{
+  "records": [
+    {
+      "action_results": [
+        {
+          "action_id": "alert",
+          "action_type": "notify.operator",
+          "detail": "notify.operator [normal] \"Projector recovered\"",
+          "duration_ms": 0,
+          "failure_policy": "stop_chain",
+          "outcome": {
+            "status": "success"
+          },
+          "simulated": false
+        }
+      ],
+      "condition_results": [],
+      "duration_ms": 0,
+      "execution_id": "exec-000001",
+      "overall_status": "success",
+      "rule_id": "back",
+      "rule_name": "Projector back",
+      "rule_version": 1,
+      "simulated": false,
+      "trigger_detail": {
+        "current": "online",
+        "device": "projector-1",
+        "kind": "device_state",
+        "previous": "unknown"
+      },
+      "trigger_type": "device_state",
+      "triggered_at_ms": 1704067200000
+    },
+    {
+      "action_results": [
+        {
+          "action_id": "incident",
+          "action_type": "log.incident",
+          "detail": "log.incident severity=high",
+          "duration_ms": 0,
+          "failure_policy": "stop_chain",
+          "outcome": {
+            "status": "success"
+          },
+          "simulated": false
+        }
+      ],
+      "condition_results": [],
+      "duration_ms": 0,
+      "execution_id": "exec-000002",
+      "overall_status": "success",
+      "rule_id": "lost",
+      "rule_name": "Projector silent",
+      "rule_version": 1,
+      "simulated": false,
+      "trigger_detail": {
+        "device": "projector-1",
+        "kind": "heartbeat_missed",
+        "missed_millis": 6000
+      },
+      "trigger_type": "heartbeat_missed",
+      "triggered_at_ms": 1704067206000
+    },
+    {
+      "action_results": [
+        {
+          "action_id": "alert",
+          "action_type": "notify.operator",
+          "detail": "notify.operator [high] \"Projector offline\"",
+          "duration_ms": 0,
+          "failure_policy": "stop_chain",
+          "outcome": {
+            "status": "success"
+          },
+          "simulated": false
+        }
+      ],
+      "condition_results": [],
+      "duration_ms": 0,
+      "execution_id": "exec-000003",
+      "overall_status": "success",
+      "rule_id": "offline",
+      "rule_name": "Projector offline",
+      "rule_version": 1,
+      "simulated": false,
+      "trigger_detail": {
+        "current": "offline",
+        "device": "projector-1",
+        "kind": "device_state",
+        "previous": "online"
+      },
+      "trigger_type": "device_state",
+      "triggered_at_ms": 1704067206000
+    },
+    {
+      "action_results": [
+        {
+          "action_id": "alert",
+          "action_type": "notify.operator",
+          "detail": "notify.operator [normal] \"Projector recovered\"",
+          "duration_ms": 0,
+          "failure_policy": "stop_chain",
+          "outcome": {
+            "status": "success"
+          },
+          "simulated": false
+        }
+      ],
+      "condition_results": [],
+      "duration_ms": 0,
+      "execution_id": "exec-000004",
+      "overall_status": "success",
+      "rule_id": "back",
+      "rule_name": "Projector back",
+      "rule_version": 1,
+      "simulated": false,
+      "trigger_detail": {
+        "current": "online",
+        "device": "projector-1",
+        "kind": "device_state",
+        "previous": "offline"
+      },
+      "trigger_type": "device_state",
+      "triggered_at_ms": 1704067266000
+    }
+  ],
+  "sent": {
+    "projector-1": []
+  }
+}

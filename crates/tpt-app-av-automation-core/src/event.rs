@@ -51,6 +51,10 @@ pub struct MidiLevel {
     /// Zero-based MIDI channel.
     pub channel: u8,
     /// Message kind discriminator, e.g. `note_on`, `cc`, `program_change`.
+    ///
+    /// Serialized as `message`: `Event` is internally tagged with `kind`, and a second `kind` key
+    /// would make every persisted MIDI execution unreadable.
+    #[serde(rename = "message")]
     pub kind: String,
     /// Message number: note number, CC number or program number.
     pub number: u8,
@@ -184,6 +188,58 @@ mod tests {
             serde_json::to_value(&e).unwrap(),
             serde_json::json!({"kind": "schedule", "spec": "18:55"})
         );
+    }
+
+    /// Regression: `Event::Midi` used to serialize two `kind` keys (the tag and the MIDI message
+    /// kind), so a persisted MIDI execution could not be read back.
+    #[test]
+    fn every_event_variant_round_trips_through_json() {
+        let events = vec![
+            Event::Schedule { spec: "18:55".into() },
+            Event::Osc {
+                address: "/a".into(),
+                args: vec![1.0, 2.5],
+            },
+            Event::Midi(MidiLevel {
+                channel: 1,
+                kind: "note_on".into(),
+                number: 60,
+                value: 127,
+            }),
+            Event::Dmx(DmxLevel {
+                universe: 1,
+                channel: 2,
+                value: 3,
+            }),
+            Event::DeviceState {
+                device: "d".into(),
+                previous: DeviceHealth::Online,
+                current: DeviceHealth::Offline,
+            },
+            Event::HeartbeatMissed {
+                device: "d".into(),
+                missed_millis: 5,
+            },
+            Event::DeviceParameter {
+                device: "d".into(),
+                parameter: "p".into(),
+                value: 1.5,
+            },
+            Event::Manual { rule: None },
+            Event::Manual {
+                rule: Some("r".into()),
+            },
+            Event::Api {
+                name: "n".into(),
+                payload: HashMap::new(),
+            },
+        ];
+        for event in events {
+            let json = serde_json::to_string(&event).unwrap();
+            assert_eq!(json.matches("\"kind\"").count(), 1, "duplicate kind key in {json}");
+            let back: Event = serde_json::from_str(&json).unwrap_or_else(|e| panic!("{json}: {e}"));
+            assert_eq!(back, event);
+        }
     }
 
     #[test]

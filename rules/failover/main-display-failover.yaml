@@ -1,0 +1,41 @@
+# Failover expressed as an ordinary, testable rule (spec §11). When the main display goes offline,
+# switch the output to the backup input, tell the operator and log an incident. If the switch
+# itself fails, escalate to manual intervention.
+#
+# (The signal-level form — `signal_lost` sustained for 2 s — arrives with the Phase 2 signal triggers;
+# device health is the MVP way to detect a dead display.)
+format_version: 1
+name: Main Display Failover
+description: Switch to the backup input when the main display drops out
+revision: 1
+rules:
+  - id: display-failover
+    name: Main Display Failover
+    version: 1
+    armed: false
+    priority: critical
+    tags: [failover]
+    trigger:
+      type: device_state
+      device: display-1
+      state: offline
+    actions:
+      - id: switch-input
+        type: control.osc
+        device: switcher
+        address: /switcher/main/input
+        args: [2]
+      - id: tell-operator
+        type: notify.operator
+        message: Main display lost. Switched to backup input.
+        severity: high
+      - id: incident
+        type: log.incident
+        severity: high
+    policy:
+      on_failure: run_fallback
+      fallback:
+        - id: escalate
+          type: notify.operator
+          message: Failover action failed. Manual intervention required.
+          severity: critical

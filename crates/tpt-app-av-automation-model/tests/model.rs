@@ -333,7 +333,22 @@ fn execution_status_folding_never_reports_partial_as_success() {
 
 #[test]
 fn duplicate_rule_ids_are_rejected() {
-    let yaml = format!("{VALID_PACK}{VALID_PACK}");
+    let yaml = r#"
+format_version: 1
+name: Dup
+revision: 1
+rules:
+  - id: same
+    name: First
+    trigger: { type: manual }
+    actions:
+      - { id: a1, type: notify.operator, message: hi }
+  - id: same
+    name: Second
+    trigger: { type: manual }
+    actions:
+      - { id: a1, type: notify.operator, message: hi }
+"#;
     let locations: Vec<_> = expect_invalid(&yaml)
         .into_iter()
         .map(|d| d.location)

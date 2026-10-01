@@ -1,0 +1,87 @@
+{
+  "records": [
+    {
+      "action_results": [],
+      "condition_results": [
+        {
+          "condition_id": "master-up",
+          "observed": "no DMX observation for universe 1 channel 0",
+          "permits": false,
+          "result": "unknown"
+        }
+      ],
+      "duration_ms": 0,
+      "execution_id": "exec-000001",
+      "overall_status": "skipped",
+      "rule_id": "fader-up",
+      "rule_name": "Fader crossed 100",
+      "rule_version": 1,
+      "simulated": false,
+      "trigger_detail": {
+        "channel": 4,
+        "kind": "dmx",
+        "universe": 1,
+        "value": 150
+      },
+      "trigger_type": "dmx",
+      "triggered_at_ms": 1704067200000
+    },
+    {
+      "action_results": [
+        {
+          "action_id": "channels",
+          "action_type": "control.dmx_channels",
+          "detail": "dmx u2 from ch10 (3 values) -> node",
+          "device": "node",
+          "duration_ms": 0,
+          "failure_policy": "stop_chain",
+          "outcome": {
+            "status": "success"
+          },
+          "simulated": false
+        },
+        {
+          "action_id": "universe",
+          "action_type": "control.dmx_universe",
+          "detail": "dmx universe 3 (3 values) -> node",
+          "device": "node",
+          "duration_ms": 0,
+          "failure_policy": "stop_chain",
+          "outcome": {
+            "status": "success"
+          },
+          "simulated": false
+        }
+      ],
+      "condition_results": [
+        {
+          "condition_id": "master-up",
+          "observed": "dmx u1 ch0 = 255",
+          "permits": true,
+          "result": "met"
+        }
+      ],
+      "duration_ms": 0,
+      "execution_id": "exec-000002",
+      "overall_status": "success",
+      "rule_id": "fader-up",
+      "rule_name": "Fader crossed 100",
+      "rule_version": 1,
+      "simulated": false,
+      "trigger_detail": {
+        "channel": 4,
+        "kind": "dmx",
+        "universe": 1,
+        "value": 101
+      },
+      "trigger_type": "dmx",
+      "triggered_at_ms": 1704067200000
+    }
+  ],
+  "sent": {
+    "node": [
+      "dmx u2 from ch10 (3 values)",
+      "dmx universe 3 (3 values)"
+    ]
+  }
+}

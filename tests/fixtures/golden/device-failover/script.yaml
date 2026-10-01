@@ -1,0 +1,8 @@
+steps:
+  - health: { device: display-1, state: online }
+  - health: { device: switcher, state: online }
+  - fault: { device: switcher, offline: true }
+  - event: { kind: device_state, device: display-1, previous: online, current: offline }
+  - fault: { device: switcher }
+  - health: { device: display-1, state: online }
+  - event: { kind: device_state, device: display-1, previous: online, current: offline }

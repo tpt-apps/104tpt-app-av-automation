@@ -1,0 +1,85 @@
+{
+  "records": [
+    {
+      "action_results": [
+        {
+          "action_id": "power",
+          "action_type": "control.osc",
+          "detail": "osc /projector/1/power = 1 -> projector-1",
+          "device": "projector-1",
+          "duration_ms": 0,
+          "failure_policy": "stop_chain",
+          "outcome": {
+            "status": "success"
+          },
+          "simulated": false
+        },
+        {
+          "action_id": "confirm",
+          "action_type": "notify.operator",
+          "detail": "notify.operator [normal] \"Cue 1 fired\"",
+          "duration_ms": 0,
+          "failure_policy": "stop_chain",
+          "outcome": {
+            "status": "success"
+          },
+          "simulated": false
+        }
+      ],
+      "condition_results": [],
+      "duration_ms": 0,
+      "execution_id": "exec-000001",
+      "overall_status": "success",
+      "rule_id": "cue-1",
+      "rule_name": "Cue 1",
+      "rule_version": 1,
+      "simulated": false,
+      "trigger_detail": {
+        "address": "/cue/1",
+        "args": [
+          1.0
+        ],
+        "kind": "osc"
+      },
+      "trigger_type": "osc",
+      "triggered_at_ms": 1704067200000
+    },
+    {
+      "action_results": [
+        {
+          "action_id": "log",
+          "action_type": "log.incident",
+          "detail": "log.incident severity=info \"a channel was muted\"",
+          "duration_ms": 0,
+          "failure_policy": "stop_chain",
+          "outcome": {
+            "status": "success"
+          },
+          "simulated": false
+        }
+      ],
+      "condition_results": [],
+      "duration_ms": 0,
+      "execution_id": "exec-000002",
+      "overall_status": "success",
+      "rule_id": "any-mute",
+      "rule_name": "Any channel mute",
+      "rule_version": 1,
+      "simulated": false,
+      "trigger_detail": {
+        "address": "/channel/7/mute",
+        "args": [
+          1.0
+        ],
+        "kind": "osc"
+      },
+      "trigger_type": "osc",
+      "triggered_at_ms": 1704067200000
+    }
+  ],
+  "sent": {
+    "projector-1": [
+      "osc /projector/1/power = 1"
+    ]
+  }
+}

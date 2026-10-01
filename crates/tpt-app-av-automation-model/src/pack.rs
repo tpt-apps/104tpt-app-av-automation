@@ -73,9 +73,13 @@ impl RulePack {
     pub fn from_path(path: impl AsRef<Path>) -> Result<Self> {
         let path = path.as_ref();
         let source = std::fs::read_to_string(path)
-            .map_err(|e| Error::Storage(format!("{}: {e}", path.display())))?;
-        Self::from_yaml_str(&source)
-            .map_err(|e| Error::Storage(format!("{}: {e}", path.display())))
+            .map_err(|e| Error::Io(format!("{}: {e}", path.display())))?;
+        // Keep the error variant: callers (and the CLI exit code) distinguish a parse error from
+        // validation diagnostics, and validation carries the located diagnostics.
+        Self::from_yaml_str(&source).map_err(|e| match e {
+            Error::Parse(message) => Error::Parse(format!("{}: {message}", path.display())),
+            other => other,
+        })
     }
 
     /// Runs validation and returns every diagnostic, errors and warnings alike.

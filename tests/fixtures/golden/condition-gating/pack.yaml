@@ -1,0 +1,36 @@
+format_version: 1
+name: Gating
+revision: 1
+rules:
+  - id: strict
+    name: Strict gate
+    armed: true
+    trigger: { type: manual }
+    conditions:
+      - { id: proj-online, type: device_health, device: projector-1, equals: online }
+    actions:
+      - { id: a, type: control.osc, device: projector-1, address: /strict, args: [1] }
+  - id: lenient
+    name: Lenient gate
+    armed: true
+    trigger: { type: manual }
+    conditions:
+      - { id: proj-online, type: device_health, device: projector-1, equals: online, fire_on_unknown: true }
+    actions:
+      - { id: a, type: control.osc, device: projector-1, address: /lenient, args: [1] }
+  - id: hot
+    name: Overheating
+    armed: true
+    trigger: { type: device_parameter, device: projector-1, parameter: temperature, comparison: gt, value: 70 }
+    conditions:
+      - { id: lamp-old, type: device_parameter, device: projector-1, parameter: lamp_hours, comparison: gte, value: 1000 }
+    actions:
+      - { id: alert, type: notify.operator, message: Projector overheating, severity: high }
+  - id: evening
+    name: Evening only
+    armed: true
+    trigger: { type: manual }
+    conditions:
+      - { id: hours, type: time_window, from: "18:00", to: "23:00" }
+    actions:
+      - { id: a, type: notify.operator, message: Evening }

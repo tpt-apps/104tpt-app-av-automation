@@ -1,0 +1,18 @@
+format_version: 1
+name: MIDI
+revision: 1
+rules:
+  - id: go-button
+    name: Go button
+    armed: true
+    trigger: { type: midi, message: note_on, channel: 0, number: 60 }
+    actions:
+      - { id: echo, type: control.midi, device: synth, channel: 1, kind: note_on, number: 64, value: 100 }
+      - { id: cc, type: control.midi, device: synth, channel: 1, kind: cc, number: 7, value: 90 }
+      - { id: osc, type: control.osc, device: mixer, address: /go, args: [1] }
+  - id: program
+    name: Program change
+    armed: true
+    trigger: { type: midi, message: program_change }
+    actions:
+      - { id: recall, type: control.midi, device: synth, channel: 0, kind: program_change, number: 5 }
