@@ -5,7 +5,7 @@ never reads a clock or a device. Each one can run against a virtual source (spec
 
 | `type` | Fields | Fires when | Foundation crate |
 |--------|--------|-----------|------------------|
-| `schedule` | exactly one of `at: "HH:MM"` (+ `days`, `once`), `cron` (five-field expression, + `once`) or `interval_ms` | the local minute matches (once per minute however often polled); a `once` schedule fires a single time ever; a cron schedule fires on every minute its expression matches; an interval fires every N ms, never as a catch-up burst | — |
+| `schedule` | exactly one of `at: "HH:MM"` (+ `days`, `once`), `cron` (five-field expression, + `once`), `solar` (`{event: sunrise\|sunset, minutes: N}`, negative = before) or `interval_ms` | the local minute matches (once per minute however often polled); a `once` schedule fires a single time ever; a cron schedule fires on every minute its expression matches; a `solar` schedule fires at that day's sunrise/sunset plus the offset, following the sun as it moves; an interval fires every N ms, never as a catch-up burst | — |
 | `osc` | `address` (`*` = one path segment), `arg_equals`, `min_args` | a matching OSC message arrives | `tpt-av-control-osc` |
 | `midi` | `message` (15 kinds, see below), `channel`, `number`, `value` (full 32-bit for MIDI 2.0), `group` (UMP port group 0-15) | a matching MIDI 1.0 or MIDI 2.0/UMP message arrives; omitted fields match anything. Kinds after `program_change` are MIDI 2.0-only and can only match a UMP source | `tpt-av-control-midi` |
 | `dmx` | `universe`, `channel`, `comparison`, `value` | the channel satisfies `equals`, `greater_than`, `less_than`, `crossed_above`, `crossed_below` or `changed`. Edge comparisons use the previous observation; an unseen channel counts as 0 | `tpt-av-control-dmx` (Art-Net, sACN) |
@@ -34,12 +34,33 @@ OSC arguments that are not numeric (strings, blobs) are skipped when building th
 
 ## Not yet implemented
 
-Sunrise/sunset-relative schedules, control-surface button/fader events, and the
+Control-surface button/fader events, and the
 Phase 2 signal-condition and media-pipeline triggers (`signal_lost`, black/freeze frame, audio
 silence/clipping, A/V drift, watch folders, job events, sibling-app events).
 
 MIDI 2.0 arrives as raw Universal MIDI Packets on a `ump` UDP listener rather than from a local
 `midi` port, because no desktop platform currently exposes native MIDI 2.0 ports to `midir`. The
-kinds after `program_change` in the table above therefore only ever match a `ump` source. Serial
-DMX512 is output-only: a `dmx512` device writes frames to a serial port, but a rule cannot trigger
-on DMX read back from that port.
+kinds after `program_change` in the table above therefore only ever match a `ump` source.
+
+A `solar` schedule needs the pack to declare a `site`, because a solar crossing cannot be computed
+without knowing where on the Earth the venue is:
+
+```yaml
+site:
+  latitude: 51.5074
+  longitude: -0.1278
+  # elevation_deg defaults to -0.833 (sunrise/sunset proper); -6 gives civil twilight
+rules:
+  - id: exterior-lights
+    trigger:
+      type: schedule
+      solar: { event: sunset, minutes: -30 }
+```
+
+Above the polar circles the sun does not cross on some days; such a schedule simply does not fire
+that day rather than being given an invented time.
+
+Serial DMX512 works in both directions: a `dmx512` device writes frames to a serial port, and a
+`dmx512` service listener reads one back, recovering frame boundaries from inter-byte timing and
+diffing each frame into the same channel-change events Art-Net and sACN produce.
+

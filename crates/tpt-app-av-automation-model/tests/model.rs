@@ -146,6 +146,7 @@ fn schedule_matching_is_deterministic_and_idempotent_within_the_minute() {
 fn weekday_gating_is_applied() {
     let spec = ScheduleSpec {
         at: LocalTime::new(9, 0),
+        solar: None,
         cron: None,
         interval_ms: None,
         days: vec![Weekday::Sat, Weekday::Sun],
@@ -884,15 +885,16 @@ rules:
 fn a_cron_matching_is_deterministic_across_repeated_polls() {
     let spec = ScheduleSpec::cron("0 9 * * mon");
     let trigger = Trigger::new(TriggerSpec::Schedule(spec.clone()));
-    let event = Event::Schedule {
-        spec: spec.label(),
-    };
+    let event = Event::Schedule { spec: spec.label() };
     // 2024-01-01 was a Monday, so 09:00 matches.
     assert!(trigger.matches(&Event::Schedule {
         spec: "cron 0 9 * * 1".into()
     }));
     assert!(trigger.matches(&event));
-    assert!(trigger.matches(&event), "matching is a pure function of the event");
+    assert!(
+        trigger.matches(&event),
+        "matching is a pure function of the event"
+    );
     assert!(!trigger.matches(&Event::Schedule {
         spec: "cron 0 10 * * 1".into()
     }));
@@ -931,8 +933,14 @@ fn midi2_only_kinds_are_flagged_as_such() {
     assert!(MidiMessageKind::ChannelPressure.is_midi2_only());
     assert_eq!(
         MidiMessageKind::ALL.len(),
-        MidiMessageKind::ALL.iter().filter(|k| !k.is_midi2_only()).count()
-            + MidiMessageKind::ALL.iter().filter(|k| k.is_midi2_only()).count()
+        MidiMessageKind::ALL
+            .iter()
+            .filter(|k| !k.is_midi2_only())
+            .count()
+            + MidiMessageKind::ALL
+                .iter()
+                .filter(|k| k.is_midi2_only())
+                .count()
     );
     // The event discriminator for a control change is `cc`, matching a MIDI 1.0 observation.
     assert_eq!(MidiMessageKind::ControlChange.as_str(), "cc");

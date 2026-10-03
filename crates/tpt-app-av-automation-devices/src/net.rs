@@ -45,7 +45,9 @@ pub struct UdpEndpoint {
 
 impl std::fmt::Debug for UdpEndpoint {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("UdpEndpoint").field("protocol", &self.protocol).finish()
+        f.debug_struct("UdpEndpoint")
+            .field("protocol", &self.protocol)
+            .finish()
     }
 }
 
@@ -92,7 +94,9 @@ impl UdpEndpoint {
             UdpProtocol::ArtNet => DmxTransport::ArtNet,
             UdpProtocol::Sacn => DmxTransport::Sacn,
             UdpProtocol::Osc => {
-                return Err(EndpointError::Rejected("OSC endpoints do not carry DMX".into()))
+                return Err(EndpointError::Rejected(
+                    "OSC endpoints do not carry DMX".into(),
+                ))
             }
         };
         if let Some(t) = transport {
@@ -103,13 +107,18 @@ impl UdpEndpoint {
             }
         }
         if start + values.len() > DMX_CHANNELS {
-            return Err(EndpointError::Rejected("values run past channel 512".into()));
+            return Err(EndpointError::Rejected(
+                "values run past channel 512".into(),
+            ));
         }
         let (frame, sequence) = {
             let mut state = self.dmx.lock().unwrap_or_else(|e| e.into_inner());
             state.sequence = state.sequence.wrapping_add(1);
             let sequence = state.sequence;
-            let slots = state.universes.entry(universe).or_insert([0u8; DMX_CHANNELS]);
+            let slots = state
+                .universes
+                .entry(universe)
+                .or_insert([0u8; DMX_CHANNELS]);
             if replace {
                 *slots = [0u8; DMX_CHANNELS];
             }
@@ -118,7 +127,14 @@ impl UdpEndpoint {
         };
         let packet = match self.protocol {
             UdpProtocol::ArtNet => build_artdmx(universe, sequence, &frame),
-            _ => build_data_packet(&self.cid, "TPT AV Automation", universe, 100, sequence, &frame),
+            _ => build_data_packet(
+                &self.cid,
+                "TPT AV Automation",
+                universe,
+                100,
+                sequence,
+                &frame,
+            ),
         };
         self.transmit(&packet)
     }
@@ -128,7 +144,9 @@ impl UdpEndpoint {
 /// receivers expect for switches and faders respectively.
 fn osc_arg(value: f64) -> std::result::Result<OscArg, EndpointError> {
     if !value.is_finite() {
-        return Err(EndpointError::Rejected("OSC argument must be finite".into()));
+        return Err(EndpointError::Rejected(
+            "OSC argument must be finite".into(),
+        ));
     }
     if value.fract() == 0.0 && value.abs() <= f64::from(i32::MAX) {
         Ok(OscArg::Int(value as i32))
@@ -157,7 +175,13 @@ impl Endpoint for UdpEndpoint {
                 start_channel,
                 values,
                 transport,
-            } => self.write_dmx(Some(*transport), *universe, usize::from(*start_channel), values, false),
+            } => self.write_dmx(
+                Some(*transport),
+                *universe,
+                usize::from(*start_channel),
+                values,
+                false,
+            ),
             Command::DmxUniverse {
                 universe,
                 values,
@@ -168,7 +192,13 @@ impl Endpoint for UdpEndpoint {
                     .scenes
                     .get(scene)
                     .ok_or_else(|| EndpointError::Rejected(format!("unknown scene `{scene}`")))?;
-                self.write_dmx(None, def.universe, usize::from(def.start_channel), &def.values, false)
+                self.write_dmx(
+                    None,
+                    def.universe,
+                    usize::from(def.start_channel),
+                    &def.values,
+                    false,
+                )
             }
             other => Err(EndpointError::Rejected(format!(
                 "`{}` is not supported by a {:?} endpoint",
@@ -187,7 +217,8 @@ pub trait MidiWriter: Send {
 
 /// Opens a [`MidiWriter`] on demand. Called again after a failure, so an unplugged-and-replugged
 /// interface recovers without restarting the engine.
-pub type MidiOpener = Box<dyn Fn() -> std::result::Result<Box<dyn MidiWriter>, String> + Send + Sync>;
+pub type MidiOpener =
+    Box<dyn Fn() -> std::result::Result<Box<dyn MidiWriter>, String> + Send + Sync>;
 
 /// An endpoint that encodes MIDI 1.0 messages and writes them to a [`MidiWriter`].
 pub struct MidiEndpoint {
@@ -235,26 +266,49 @@ impl MidiEndpoint {
     }
 
     /// Encodes a command to MIDI 1.0 bytes, validating every range.
+    ///
+    /// A MIDI 1.0 port cannot carry a UMP group or a 32-bit value, so those are rejected rather
+    /// than silently narrowed: an operator who wrote `value32` against a `midi` device has made a
+    /// mistake that must surface at load time, not show up as a truncated value on stage.
     pub fn encode(command: &Command) -> std::result::Result<Vec<u8>, EndpointError> {
         let Command::Midi {
             channel,
             kind,
             number,
             value,
+            group,
+            value32,
+            ..
         } = command
         else {
             return Err(EndpointError::Rejected("not a MIDI command".into()));
         };
+        if group.is_some() {
+            return Err(EndpointError::Rejected(
+                "`group` selects a UMP port and cannot be sent to a MIDI 1.0 port".into(),
+            ));
+        }
+        if value32.is_some() {
+            return Err(EndpointError::Rejected(
+                "`value32` is a MIDI 2.0 value; a MIDI 1.0 port cannot carry 32-bit data".into(),
+            ));
+        }
         if *channel > 15 {
-            return Err(EndpointError::Rejected(format!("MIDI channel {channel} out of range 0-15")));
+            return Err(EndpointError::Rejected(format!(
+                "MIDI channel {channel} out of range 0-15"
+            )));
         }
         if *number > 127 {
-            return Err(EndpointError::Rejected(format!("MIDI number {number} out of range 0-127")));
+            return Err(EndpointError::Rejected(format!(
+                "MIDI number {number} out of range 0-127"
+            )));
         }
         let value = u8::try_from(*value)
             .ok()
             .filter(|v| *v <= 127)
-            .ok_or_else(|| EndpointError::Rejected(format!("MIDI value {value} out of range 0-127")))?;
+            .ok_or_else(|| {
+                EndpointError::Rejected(format!("MIDI value {value} out of range 0-127"))
+            })?;
         let message = match kind.as_str() {
             "note_on" => Midi1Message::NoteOn {
                 channel: *channel,
@@ -275,7 +329,11 @@ impl MidiEndpoint {
                 channel: *channel,
                 program: *number,
             },
-            other => return Err(EndpointError::Rejected(format!("unknown MIDI kind `{other}`"))),
+            other => {
+                return Err(EndpointError::Rejected(format!(
+                    "unknown MIDI kind `{other}`"
+                )))
+            }
         };
         Ok(message.to_bytes())
     }
@@ -316,9 +374,20 @@ pub fn build_endpoint(config: &DeviceConfig) -> Result<Box<dyn Endpoint>> {
         "osc" => udp(UdpProtocol::Osc),
         "artnet" => udp(UdpProtocol::ArtNet),
         "sacn" => udp(UdpProtocol::Sacn),
-        "midi" => Ok(Box::new(MidiEndpoint::with_opener(crate::midi_port::output_opener(
-            address,
-        )))),
+        "midi" => Ok(Box::new(MidiEndpoint::with_opener(
+            crate::midi_port::output_opener(address),
+        ))),
+        "ump" => {
+            if address.trim().is_empty() {
+                return Err(Error::Control(format!(
+                    "device `{}`: a ump device needs a gateway address `host:port` in `address`",
+                    config.id
+                )));
+            }
+            let endpoint = crate::ump::UmpEndpoint::new(&address)
+                .map_err(|e| Error::Control(format!("device `{}`: {e}", config.id)))?;
+            Ok(Box::new(endpoint))
+        }
         "dmx512" => {
             if address.trim().is_empty() {
                 return Err(Error::Control(format!(
@@ -348,7 +417,9 @@ mod tests {
 
     fn listener() -> (UdpSocket, String) {
         let socket = UdpSocket::bind("127.0.0.1:0").unwrap();
-        socket.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
+        socket
+            .set_read_timeout(Some(Duration::from_secs(2)))
+            .unwrap();
         let addr = socket.local_addr().unwrap().to_string();
         (socket, addr)
     }
@@ -413,7 +484,10 @@ mod tests {
         .unwrap();
         let mut buf = [0u8; 1024];
         let n = rx.recv(&mut buf).unwrap();
-        assert!(matches!(parse_artnet(&buf[..n]).unwrap(), ArtNetPacket::Dmx { .. }));
+        assert!(matches!(
+            parse_artnet(&buf[..n]).unwrap(),
+            ArtNetPacket::Dmx { .. }
+        ));
         assert!(matches!(
             ep.send(&Command::DmxScene {
                 scene: "missing".into(),
@@ -435,7 +509,9 @@ mod tests {
         .unwrap();
         let mut buf = [0u8; 1024];
         let n = rx.recv(&mut buf).unwrap();
-        let packet = tpt_av_control_dmx::sacn::parse_packet(&buf[..n]).unwrap().unwrap();
+        let packet = tpt_av_control_dmx::sacn::parse_packet(&buf[..n])
+            .unwrap()
+            .unwrap();
         assert_eq!(packet.universe, 7);
         assert_eq!(&packet.slots[..3], &[1, 2, 3]);
     }
@@ -481,7 +557,10 @@ mod tests {
                 args: vec![],
             },
         ] {
-            assert!(matches!(ep.send(&cmd), Err(EndpointError::Rejected(_))), "{cmd:?}");
+            assert!(
+                matches!(ep.send(&cmd), Err(EndpointError::Rejected(_))),
+                "{cmd:?}"
+            );
         }
     }
 
@@ -502,6 +581,9 @@ mod tests {
             kind: kind.into(),
             number,
             value,
+            group: None,
+            value32: None,
+            index: None,
         };
         ep.send(&midi(1, "note_on", 60, 127)).unwrap();
         ep.send(&midi(0, "cc", 7, 64)).unwrap();
@@ -516,7 +598,10 @@ mod tests {
             midi(0, "note_on", 60, 128),
             midi(0, "sysex", 1, 1),
         ] {
-            assert!(matches!(ep.send(&bad), Err(EndpointError::Rejected(_))), "{bad:?}");
+            assert!(
+                matches!(ep.send(&bad), Err(EndpointError::Rejected(_))),
+                "{bad:?}"
+            );
         }
         assert_eq!(store.lock().unwrap().len(), 3);
     }
@@ -530,7 +615,10 @@ mod tests {
                 channel: 0,
                 kind: "cc".into(),
                 number: 1,
-                value: 1
+                value: 1,
+                group: None,
+                value32: None,
+                index: None,
             }),
             Err(EndpointError::Unreachable(_))
         ));
@@ -555,9 +643,18 @@ mod tests {
             kind: "cc".into(),
             number: 1,
             value: 2,
+            group: None,
+            value32: None,
+            index: None,
         };
-        assert!(matches!(ep.send(&cmd), Err(EndpointError::Unreachable(_))), "port missing at first");
-        assert!(ep.send(&cmd).is_ok(), "the port appeared; the endpoint reconnected");
+        assert!(
+            matches!(ep.send(&cmd), Err(EndpointError::Unreachable(_))),
+            "port missing at first"
+        );
+        assert!(
+            ep.send(&cmd).is_ok(),
+            "the port appeared; the endpoint reconnected"
+        );
         assert_eq!(store.lock().unwrap().len(), 1);
         assert_eq!(opens.load(Ordering::SeqCst), 2);
         assert!(ep.ping().is_ok());
@@ -599,11 +696,17 @@ mod tests {
             address: None,
             ..base.clone()
         };
-        assert!(build_endpoint(&unnamed).is_err(), "no port name is a configuration error");
+        assert!(
+            build_endpoint(&unnamed).is_err(),
+            "no port name is a configuration error"
+        );
         let blank = DeviceConfig {
             address: Some("   ".into()),
             ..base
         };
-        assert!(build_endpoint(&blank).is_err(), "a blank port name is a configuration error");
+        assert!(
+            build_endpoint(&blank).is_err(),
+            "a blank port name is a configuration error"
+        );
     }
 }

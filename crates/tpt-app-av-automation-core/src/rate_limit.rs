@@ -127,8 +127,15 @@ impl RateLimiter {
     ///
     /// Returns `false` when the caller is over budget or the key is muted, in which case the event
     /// must be dropped and the drop recorded.
+    ///
+    /// A poisoned lock is recovered rather than propagated. This runs for every inbound datagram on
+    /// every protocol listener, so panicking here would take that listener thread down with it, and
+    /// the watchdog does not help: the process stays up and `/health` keeps reporting nominal
+    /// while one protocol has silently stopped listening. Recovery is sound because the guarded
+    /// state is plain accounting, a map of token counts plus `u64` counters, with no partially
+    /// updated structure a panic mid-write could leave inconsistent.
     pub fn try_acquire(&self, key: &str, now: Timestamp) -> bool {
-        let mut guard = self.state.lock().expect("rate limiter mutex poisoned");
+        let mut guard = self.state.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         let (capacity, refill) = (self.capacity, self.refill_per_millis);
         let entry = guard
             .entry(key.to_owned())
@@ -174,29 +181,29 @@ impl RateLimiter {
     }
 
     fn bump_dropped(&self) {
-        let mut dropped = self.dropped.lock().expect("rate limiter mutex poisoned");
+        let mut dropped = self.dropped.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         *dropped += 1;
     }
 
     fn bump_muted(&self) {
-        let mut muted = self.muted_events.lock().expect("rate limiter mutex poisoned");
+        let mut muted = self.muted_events.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         *muted += 1;
     }
 
     fn bump_backoff(&self) {
-        let mut backoffs = self.backoffs.lock().expect("rate limiter mutex poisoned");
+        let mut backoffs = self.backoffs.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         *backoffs += 1;
     }
 
     /// Tokens currently available for `key`.
     pub fn available(&self, key: &str) -> f64 {
-        let guard = self.state.lock().expect("rate limiter mutex poisoned");
+        let guard = self.state.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         guard.get(key).map(|s| s.tokens).unwrap_or(self.capacity)
     }
 
     /// How much longer `key` stays muted at `now`, in milliseconds; `0` when it may be admitted.
     pub fn muted_for_ms(&self, key: &str, now: Timestamp) -> u64 {
-        let guard = self.state.lock().expect("rate limiter mutex poisoned");
+        let guard = self.state.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         guard
             .get(key)
             .filter(|s| s.level > 0 && now.as_millis() < s.muted_until)
@@ -206,28 +213,28 @@ impl RateLimiter {
 
     /// Total number of events dropped because a source exceeded its budget or was muted.
     pub fn dropped(&self) -> u64 {
-        *self.dropped.lock().expect("rate limiter mutex poisoned")
+        *self.dropped.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
     /// Events rejected while their source was already muted.
     pub fn muted(&self) -> u64 {
-        *self.muted_events.lock().expect("rate limiter mutex poisoned")
+        *self.muted_events.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
     /// Number of backoff episodes started, i.e. distinct times a source was muted.
     pub fn backoffs(&self) -> u64 {
-        *self.backoffs.lock().expect("rate limiter mutex poisoned")
+        *self.backoffs.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
     /// Drops all accounting, e.g. when a device is reconfigured.
     pub fn reset(&self) {
         self.state
             .lock()
-            .expect("rate limiter mutex poisoned")
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clear();
-        *self.dropped.lock().expect("rate limiter mutex poisoned") = 0;
-        *self.muted_events.lock().expect("rate limiter mutex poisoned") = 0;
-        *self.backoffs.lock().expect("rate limiter mutex poisoned") = 0;
+        *self.dropped.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = 0;
+        *self.muted_events.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = 0;
+        *self.backoffs.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = 0;
     }
 }
 
@@ -413,5 +420,84 @@ mod tests {
         assert!(!limiter.try_acquire("x", now));
         // The mute saturates instead of wrapping around into the past.
         assert_eq!(limiter.muted_for_ms("x", now), 1);
+    }
+
+    /// Poisons `limiter`'s shared state by panicking inside the critical section.
+    ///
+    /// `try_acquire` holds the state lock across its accounting update, so poisoning it the way a
+    /// real panic would requires reaching into the private field; this helper does exactly that and
+    /// is the only place the test module touches internals.
+    fn poison(limiter: &RateLimiter) {
+        let _guard = limiter.state.lock().expect("freshly locked");
+        panic!("simulated panic inside the rate limiter critical section");
+    }
+
+    #[test]
+    fn a_poisoned_lock_does_not_take_the_listener_down() {
+        let limiter = RateLimiter::with_backoff(
+            2,
+            1_000,
+            BackoffPolicy {
+                threshold: 2,
+                initial_millis: 100,
+                max_millis: 400,
+            },
+        );
+        let t0 = Timestamp::from_millis(0);
+
+        // A panic anywhere in the process can leave the shared state poisoned.
+        let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| poison(&limiter)));
+        assert!(caught.is_err(), "the helper really did panic");
+
+        // Every accessor must keep working: a panic here would kill the listener thread, and the
+        // process would keep serving /health as if nothing had happened.
+        assert!(limiter.try_acquire("a", t0), "still admits");
+        assert!(limiter.try_acquire("a", t0), "still admits");
+        assert!(!limiter.try_acquire("a", t0), "and still limits");
+        assert_eq!(limiter.dropped(), 1);
+        assert_eq!(limiter.muted(), 0);
+        assert_eq!(limiter.backoffs(), 0);
+        assert_eq!(limiter.muted_for_ms("a", t0), 0);
+        assert!(limiter.available("a") < 2.0);
+
+        // Reset must work too, or a reconfigured device could not clear its accounting.
+        limiter.reset();
+        assert_eq!(limiter.dropped(), 0);
+        assert!(limiter.try_acquire("a", t0));
+    }
+
+    #[test]
+    fn a_poisoned_counter_lock_does_not_stop_accounting() {
+        let limiter = RateLimiter::new(1, 1_000);
+        let t0 = Timestamp::from_millis(0);
+        assert!(limiter.try_acquire("a", t0));
+        assert!(!limiter.try_acquire("a", t0));
+        assert_eq!(limiter.dropped(), 1);
+
+        // The counters are behind their own locks; poison one and read them all.
+        let poisoned = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = limiter.dropped.lock().expect("freshly locked");
+            panic!("simulated panic while holding a counter lock");
+        }));
+        assert!(poisoned.is_err(), "the helper really did panic");
+        let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _ = limiter.dropped();
+            let _ = limiter.muted();
+            let _ = limiter.backoffs();
+        }));
+        assert!(caught.is_ok(), "counters keep reporting after poisoning");
+        assert_eq!(limiter.dropped(), 1);
+    }
+
+    #[test]
+    fn poisoning_does_not_leak_between_sources() {
+        let limiter = RateLimiter::new(1, 1_000);
+        let t0 = Timestamp::from_millis(0);
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| poison(&limiter)));
+
+        // Per-source accounting is independent, so one poisoned limiter still separates sources.
+        assert!(limiter.try_acquire("calm", t0));
+        assert!(!limiter.try_acquire("calm", t0));
+        assert!(limiter.try_acquire("other", t0));
     }
 }

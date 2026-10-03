@@ -65,6 +65,10 @@ pub trait Clock: Send + Sync {
 }
 
 /// A [`Clock`] whose value only changes when the caller advances it.
+///
+/// The lock recovers from poisoning rather than propagating it, matching every other shared-state
+/// lock in the workspace. The guarded value is a single timestamp, so a recovered clock is exactly
+/// as usable as a fresh one, and a panic elsewhere must not be able to stop time.
 #[derive(Debug, Clone)]
 pub struct FixedClock {
     now: Arc<Mutex<Timestamp>>,
@@ -80,13 +84,13 @@ impl FixedClock {
 
     /// Advances the clock by `millis`.
     pub fn advance_millis(&self, millis: u64) {
-        let mut guard = self.now.lock().expect("fixed clock mutex poisoned");
+        let mut guard = self.now.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         *guard = guard.saturating_add_millis(millis);
     }
 
     /// Sets the clock to an absolute instant.
     pub fn set(&self, at: Timestamp) {
-        let mut guard = self.now.lock().expect("fixed clock mutex poisoned");
+        let mut guard = self.now.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         *guard = at;
     }
 }
@@ -99,7 +103,7 @@ impl Default for FixedClock {
 
 impl Clock for FixedClock {
     fn now(&self) -> Timestamp {
-        *self.now.lock().expect("fixed clock mutex poisoned")
+        *self.now.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 }
 

@@ -4,6 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 use tpt_app_av_automation_core::{Event, Timestamp};
+use tpt_app_av_automation_model::solar::{solar_day, SolarDay, SolarEvent, SolarSite};
 use tpt_app_av_automation_model::{Rule, ScheduleMoment, ScheduleSpec, TriggerSpec};
 
 const MILLIS_PER_MINUTE: i64 = 60_000;
@@ -32,6 +33,8 @@ pub struct LocalMoment {
     pub day_of_month: u32,
     /// Month of the local year, 1-12. Needed by cron month fields.
     pub month: u32,
+    /// Days since 1970-01-01 in the local calendar, needed to resolve a solar schedule.
+    pub day_index: i64,
 }
 
 /// The proleptic Gregorian calendar date for a count of days since 1970-01-01.
@@ -60,7 +63,8 @@ impl LocalClock {
     /// Local time for a timestamp.
     pub fn local(&self, ts: Timestamp) -> LocalMoment {
         let millis = i64::try_from(ts.as_millis()).unwrap_or(i64::MAX / 2);
-        let local_millis = millis.saturating_add(i64::from(self.utc_offset_minutes) * MILLIS_PER_MINUTE);
+        let local_millis =
+            millis.saturating_add(i64::from(self.utc_offset_minutes) * MILLIS_PER_MINUTE);
         let absolute_minute = local_millis.div_euclid(MILLIS_PER_MINUTE);
         let day = absolute_minute.div_euclid(MINUTES_PER_DAY);
         // 1970-01-01 was a Thursday, index 3 when Monday is 0.
@@ -73,6 +77,7 @@ impl LocalClock {
             absolute_minute,
             day_of_month,
             month,
+            day_index: day.clamp(-1_000_000, 1_000_000),
         }
     }
 }
@@ -93,6 +98,11 @@ pub struct SchedulerState {
 pub struct Scheduler {
     entries: BTreeMap<String, ScheduleSpec>,
     state: SchedulerState,
+    /// The venue's coordinates, needed to resolve a sunrise or sunset to a wall-clock minute.
+    site: Option<SolarSite>,
+    /// How many minutes east of UTC the site is. The solar calculation returns local minutes using
+    /// the same fixed offset the rest of the engine uses, so no timezone database is needed.
+    site_offset_minutes: i32,
 }
 
 impl Scheduler {
@@ -102,14 +112,95 @@ impl Scheduler {
     }
 
     /// Builds a scheduler from the schedule triggers of the given rules.
-    pub fn from_rules<'a>(rules: impl IntoIterator<Item = &'a Rule>) -> Self {
+    ///
+    /// `utc_offset_minutes` is the site offset used to turn a solar crossing into a local
+    /// wall-clock minute, matching the offset the engine polls with.
+    pub fn from_rules<'a>(
+        rules: impl IntoIterator<Item = &'a Rule>,
+        site: Option<SolarSite>,
+        utc_offset_minutes: i32,
+    ) -> Self {
         let mut s = Self::new();
         for rule in rules {
             if let TriggerSpec::Schedule(spec) = &rule.trigger.spec {
                 s.add(spec.clone());
             }
         }
+        if let Some(site) = site {
+            s = s.with_site(site, utc_offset_minutes);
+        }
         s
+    }
+
+    /// Supplies the venue's coordinates, which a sunrise or sunset schedule needs.
+    ///
+    /// Without a site a solar schedule never fires; the pack validator rejects that combination at
+    /// load time, so this is only reachable for a scheduler built by hand.
+    pub fn with_site(mut self, site: SolarSite, utc_offset_minutes: i32) -> Self {
+        self.site = Some(site);
+        self.site_offset_minutes = utc_offset_minutes;
+        self
+    }
+
+    /// The minutes-since-local-midnight crossing of `event` on the day `day_index` days after
+    /// 1970-01-01. Returns `None` when the sun does not cross that day.
+    fn crossing(&self, site: &SolarSite, event: SolarEvent, day_index: i64) -> Option<u32> {
+        let (year, month, day) = civil_from_days(day_index);
+        let crossings = solar_day(
+            site,
+            year,
+            i64::from(month),
+            i64::from(day),
+            self.site_offset_minutes,
+        )
+        .ok()?;
+        let SolarDay::Normal {
+            sunrise_minutes,
+            sunset_minutes,
+        } = crossings
+        else {
+            return None;
+        };
+        Some(match event {
+            SolarEvent::Sunrise => sunrise_minutes,
+            SolarEvent::Sunset => sunset_minutes,
+        })
+    }
+
+    /// Whether a solar schedule is due at this wall-clock minute.
+    ///
+    /// The offset is applied to the day's own crossing as an *absolute* minute, which may fall
+    /// outside the day: an hour after a 23:58 sunset is 00:58 the next morning, and an hour before
+    /// a 00:20 sunrise is 23:20 the evening before. The firing is therefore due on whichever
+    /// calendar day that absolute minute actually lands on, which is checked here by dividing the
+    /// absolute minute by a day and requiring the quotient to match today's day index. Working in
+    /// absolute minutes rather than wrapping into the day is what keeps "an hour after sunset"
+    /// firing once per day at the right instant instead of also matching an ordinary minute this
+    /// morning that happens to equal the wrapped value.
+    fn solar_fires(&self, spec: &ScheduleSpec, moment: &ScheduleMoment) -> bool {
+        let Some(offset) = spec.solar else {
+            return false;
+        };
+        let Some(site) = self.site.as_ref() else {
+            return false;
+        };
+        if !spec.day_matches(moment.weekday_index) {
+            return false;
+        };
+        // A firing is due when some nearby day's crossing, plus the offset, lands on *this* day at *this*
+        // minute. The candidate days are bounded: an offset of at most 12 hours (enforced by the
+        // validator) can never reach further than the day either side.
+        [-1i64, 0, 1].into_iter().any(|shift| {
+            let Some(crossing) = self.crossing(site, offset.event, moment.day_index + shift) else {
+                return false;
+            };
+            // The absolute minute is counted from midnight of the crossing's own day, so the
+            // firing lands `shift + div_euclid` days from today. Requiring that to be zero is what
+            // stops a wrapped target from firing on the wrong date.
+            let absolute = i64::from(crossing) + i64::from(offset.minutes);
+            shift + absolute.div_euclid(1440) == 0
+                && absolute.rem_euclid(1440) == i64::from(moment.minute)
+        })
     }
 
     /// Adds a schedule. Identical schedules share one entry and fire one event.
@@ -150,6 +241,7 @@ impl Scheduler {
             weekday_index: local.weekday_index,
             day_of_month: Some(local.day_of_month),
             month: Some(local.month),
+            day_index: local.day_index,
         };
         let mut events = Vec::new();
         for (label, spec) in &self.entries {
@@ -171,7 +263,9 @@ impl Scheduler {
                     }
                     Some(_) => false,
                 }
-            } else if spec.due_minute(&moment) {
+            } else if self.solar_fires(spec, &moment)
+                || (!spec.solar.is_some() && spec.due_minute(&moment))
+            {
                 let already_this_minute =
                     self.state.last_fired_minute.get(label) == Some(&local.absolute_minute);
                 let spent_one_shot = spec.once && self.state.fired_once.contains(label);
@@ -209,7 +303,11 @@ mod tests {
 
     fn ts(day: u64, hour: u64, minute: u64, second: u64) -> Timestamp {
         Timestamp::from_millis(
-            MONDAY_MIDNIGHT_UTC + day * 86_400_000 + hour * 3_600_000 + minute * 60_000 + second * 1_000,
+            MONDAY_MIDNIGHT_UTC
+                + day * 86_400_000
+                + hour * 3_600_000
+                + minute * 60_000
+                + second * 1_000,
         )
     }
 
@@ -242,7 +340,11 @@ mod tests {
         assert!(s.poll(ts(0, 18, 55, 30), clock).is_empty());
         assert!(s.poll(ts(0, 18, 55, 59), clock).is_empty());
         assert!(s.poll(ts(0, 18, 56, 0), clock).is_empty());
-        assert_eq!(s.poll(ts(1, 18, 55, 0), clock).len(), 1, "fires again next day");
+        assert_eq!(
+            s.poll(ts(1, 18, 55, 0), clock).len(),
+            1,
+            "fires again next day"
+        );
     }
 
     #[test]
@@ -271,7 +373,10 @@ mod tests {
         let mut second = Scheduler::new();
         second.add(spec);
         second.restore(serde_json::from_str(&saved).unwrap());
-        assert!(second.poll(ts(0, 18, 55, 10), clock).is_empty(), "same minute");
+        assert!(
+            second.poll(ts(0, 18, 55, 10), clock).is_empty(),
+            "same minute"
+        );
         assert!(second.poll(ts(1, 18, 55, 0), clock).is_empty(), "next day");
     }
 
@@ -310,7 +415,13 @@ mod tests {
     fn civil_dates_are_derived_from_the_local_day() {
         let clock = LocalClock::default();
         // 2024-01-01 was a Monday.
-        assert_eq!((clock.local(ts(0, 12, 0, 0)).day_of_month, clock.local(ts(0, 12, 0, 0)).month), (1, 1));
+        assert_eq!(
+            (
+                clock.local(ts(0, 12, 0, 0)).day_of_month,
+                clock.local(ts(0, 12, 0, 0)).month
+            ),
+            (1, 1)
+        );
         // Day 59 of 2024 is 29 February, a leap year.
         assert_eq!(
             (
@@ -344,7 +455,10 @@ mod tests {
         let clock = LocalClock::default();
         // Monday 09:00 and 09:30 fire; 09:01 does not.
         assert_eq!(s.poll(ts(0, 9, 0, 0), clock).len(), 1);
-        assert!(s.poll(ts(0, 9, 0, 30), clock).is_empty(), "same minute, idempotent");
+        assert!(
+            s.poll(ts(0, 9, 0, 30), clock).is_empty(),
+            "same minute, idempotent"
+        );
         assert!(s.poll(ts(0, 9, 1, 0), clock).is_empty());
         assert_eq!(s.poll(ts(0, 9, 30, 0), clock).len(), 1);
         assert_eq!(s.poll(ts(0, 9, 0, 0), clock).len(), 1, "next day");
@@ -384,7 +498,10 @@ mod tests {
         let mut s = Scheduler::new();
         s.add(spec.clone());
         assert_eq!(s.poll(ts(0, 9, 0, 0), clock).len(), 1);
-        assert!(s.poll(ts(0, 10, 0, 0), clock).is_empty(), "later the same day");
+        assert!(
+            s.poll(ts(0, 10, 0, 0), clock).is_empty(),
+            "later the same day"
+        );
         assert!(s.poll(ts(1, 9, 0, 0), clock).is_empty(), "the next day");
 
         // And it survives a restart from persisted state.
@@ -401,5 +518,300 @@ mod tests {
         s.add(ScheduleSpec::cron("not a cron"));
         assert!(s.poll(ts(0, 0, 0, 0), LocalClock::default()).is_empty());
         assert_eq!(s.entries.keys().next().unwrap(), "cron not a cron");
+    }
+}
+
+#[cfg(test)]
+mod solar_tests {
+    use super::*;
+    use tpt_app_av_automation_model::SolarOffset;
+
+    /// London, 51.5 N.
+    fn london() -> SolarSite {
+        SolarSite::new(51.5074, -0.1278)
+    }
+
+    /// Longyearbyen, well inside the Arctic Circle.
+    fn arctic() -> SolarSite {
+        SolarSite::new(78.2232, 15.6469)
+    }
+
+    /// 2024-01-01 was a Monday; this is midnight UTC on that day.
+    const MONDAY_MIDNIGHT_UTC: u64 = 1_704_067_200_000;
+
+    fn ts(day: u64, hour: u64, minute: u64) -> Timestamp {
+        Timestamp::from_millis(
+            MONDAY_MIDNIGHT_UTC + day * 86_400_000 + hour * 3_600_000 + minute * 60_000,
+        )
+    }
+
+    /// A timestamp at `day`, `hour`, `minute`, taking the minute-of-day as a single u32 so the
+    /// solar tests read in the same units the calculation produces.
+    fn ts_minutes(day: u64, minutes_since_midnight: u32) -> Timestamp {
+        ts(
+            day,
+            u64::from(minutes_since_midnight / 60),
+            u64::from(minutes_since_midnight % 60),
+        )
+    }
+    fn scheduler(site: SolarSite, offset_minutes: i32) -> Scheduler {
+        Scheduler::new().with_site(site, offset_minutes)
+    }
+
+    #[test]
+    fn a_solar_schedule_fires_at_the_computed_minute() {
+        // London in UTC on 1 January: sunrise 08:04, sunset 16:03.
+        let (sunrise, sunset) = solar_day(&london(), 2024, 1, 1, 0)
+            .ok()
+            .and_then(|d| match d {
+                SolarDay::Normal {
+                    sunrise_minutes,
+                    sunset_minutes,
+                } => Some((sunrise_minutes, sunset_minutes)),
+                _ => None,
+            })
+            .expect("London has a normal day in January");
+
+        let mut s = scheduler(london(), 0);
+        s.add(ScheduleSpec::solar(SolarOffset::new(
+            SolarEvent::Sunrise,
+            0,
+        )));
+        let clock = LocalClock::default();
+        assert!(
+            s.poll(ts_minutes(0, sunrise - 1), clock).is_empty(),
+            "the minute before sunrise does not fire"
+        );
+        assert_eq!(s.poll(ts_minutes(0, sunrise), clock).len(), 1);
+        assert!(
+            s.poll(ts_minutes(0, sunrise), clock).is_empty(),
+            "idempotent within the minute"
+        );
+        assert!(
+            s.poll(ts_minutes(0, sunrise + 1), clock).is_empty(),
+            "and only on that minute"
+        );
+        let _ = sunset;
+    }
+
+    #[test]
+    fn a_negative_offset_fires_before_the_crossing() {
+        let mut s = scheduler(london(), 0);
+        s.add(ScheduleSpec::solar(SolarOffset::before(
+            SolarEvent::Sunrise,
+            30,
+        )));
+        let clock = LocalClock::default();
+        let sunrise = target_minute(&london(), 0, 2024, 1, 1, SolarEvent::Sunrise);
+        assert!(s.poll(ts_minutes(0, sunrise - 30 - 1), clock).is_empty());
+        assert_eq!(s.poll(ts_minutes(0, sunrise - 30), clock).len(), 1);
+    }
+
+    #[test]
+    fn a_positive_offset_fires_after_the_crossing() {
+        let mut s = scheduler(london(), 0);
+        s.add(ScheduleSpec::solar(SolarOffset::new(
+            SolarEvent::Sunset,
+            30,
+        )));
+        let clock = LocalClock::default();
+        let sunset = target_minute(&london(), 0, 2024, 1, 1, SolarEvent::Sunset);
+        assert!(s.poll(ts_minutes(0, sunset + 30 - 1), clock).is_empty());
+        assert_eq!(s.poll(ts_minutes(0, sunset + 30), clock).len(), 1);
+    }
+
+    #[test]
+    fn the_target_minute_follows_the_seasons() {
+        // The same rule fires earlier in January than in June, which is the whole point.
+        let mut s = scheduler(london(), 0);
+        s.add(ScheduleSpec::solar(SolarOffset::new(SolarEvent::Sunset, 0)));
+        let clock = LocalClock::default();
+
+        let january = target_minute(&london(), 0, 2024, 1, 1, SolarEvent::Sunset);
+        let june = target_minute(&london(), 0, 2024, 6, 21, SolarEvent::Sunset);
+        assert!(
+            june > january + 60,
+            "June sunset ({june}) is much later than January ({january})"
+        );
+        assert_eq!(s.poll(ts_minutes(0, january), clock).len(), 1);
+    }
+
+    fn target_minute(
+        site: &SolarSite,
+        offset: i32,
+        year: i64,
+        month: i64,
+        day: i64,
+        event: SolarEvent,
+    ) -> u32 {
+        let SolarDay::Normal {
+            sunrise_minutes,
+            sunset_minutes,
+        } = solar_day(site, year, month, day, offset).expect("a normal day")
+        else {
+            panic!("expected a normal day")
+        };
+        match event {
+            SolarEvent::Sunrise => sunrise_minutes,
+            SolarEvent::Sunset => sunset_minutes,
+        }
+    }
+    #[test]
+    fn an_offset_that_crosses_midnight_still_fires_once() {
+        // A temperate site whose sunset on 2024-01-01 is at 23:58 local. An hour after it is 00:58
+        // the next morning, so the firing belongs to the *following* calendar date: it is the small
+        // hours of 1 January that follow the evening of 31 December.
+        let site = SolarSite::new(40.0, -110.0);
+        let sunset = target_minute(&site, 0, 2024, 1, 1, SolarEvent::Sunset);
+        assert_eq!(sunset, 1438, "23:58 local");
+
+        let mut s = scheduler(site, 0);
+        s.add(ScheduleSpec::solar(SolarOffset::new(
+            SolarEvent::Sunset,
+            60,
+        )));
+        let clock = LocalClock::default();
+
+        let rolled = (sunset + 60) % 1440;
+        assert_eq!(rolled, 58, "00:58");
+
+        // The sunset minute itself is not the firing minute; the hour after it is.
+        assert!(s.poll(ts_minutes(0, sunset), clock).is_empty());
+        assert!(s.poll(ts_minutes(0, rolled - 1), clock).is_empty());
+
+        // 00:58 on 1 January fires, following the 31 December sunset.
+        assert_eq!(s.poll(ts_minutes(0, rolled), clock).len(), 1);
+        assert!(
+            s.poll(ts_minutes(0, rolled), clock).is_empty(),
+            "and only once"
+        );
+
+        // And it fires again the next morning, following the 1 January sunset.
+        let next = target_minute(&site, 0, 2024, 1, 2, SolarEvent::Sunset);
+        assert_eq!(
+            (next + 60) % 1440,
+            rolled,
+            "the sunset barely moves overnight"
+        );
+        assert_eq!(s.poll(ts_minutes(1, rolled), clock).len(), 1);
+    }
+
+    #[test]
+    fn the_site_offset_shifts_the_firing_time() {
+        let mut utc = scheduler(london(), 0);
+        let mut bst = scheduler(london(), 60);
+        let spec = ScheduleSpec::solar(SolarOffset::new(SolarEvent::Sunrise, 0));
+        utc.add(spec.clone());
+        bst.add(spec);
+        let clock = LocalClock::default();
+        // The two sites compute the same UTC crossing but label it one hour apart, so a poll an
+        // hour apart matches exactly one of them.
+        let sunrise_utc = target_minute(&london(), 0, 2024, 1, 1, SolarEvent::Sunrise);
+        let sunrise_bst = target_minute(&london(), 60, 2024, 1, 1, SolarEvent::Sunrise);
+        assert_eq!(
+            sunrise_bst,
+            sunrise_utc + 60,
+            "the offset shifts the label by an hour"
+        );
+        assert_eq!(utc.poll(ts_minutes(0, sunrise_utc), clock).len(), 1);
+        assert_eq!(bst.poll(ts_minutes(0, sunrise_bst), clock).len(), 1);
+        assert!(utc.poll(ts_minutes(0, sunrise_bst), clock).is_empty());
+        assert!(bst.poll(ts_minutes(0, sunrise_utc), clock).is_empty());
+    }
+
+    #[test]
+    fn without_a_site_a_solar_schedule_never_fires() {
+        let mut s = Scheduler::new();
+        s.add(ScheduleSpec::solar(SolarOffset::new(
+            SolarEvent::Sunrise,
+            0,
+        )));
+        assert!(s.poll(ts(0, 8, 4), LocalClock::default()).is_empty());
+    }
+
+    #[test]
+    fn a_polar_site_never_fires_rather_than_firing_at_a_wrong_time() {
+        // Longyearbyen has neither sunrise nor sunset at the solstice in either direction.
+        for (month, day) in [(6i64, 21i64), (12, 21)] {
+            let mut s = scheduler(arctic(), 0);
+            s.add(ScheduleSpec::solar(SolarOffset::new(
+                SolarEvent::Sunrise,
+                0,
+            )));
+            s.add(ScheduleSpec::solar(SolarOffset::new(SolarEvent::Sunset, 0)));
+            let clock = LocalClock::default();
+            for hour in 0..24u64 {
+                assert!(
+                    s.poll(ts(0, hour, 0), clock).is_empty(),
+                    "month {month} day {day} hour {hour} must not fire"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_weekday_filter_still_applies_to_a_solar_schedule() {
+        let mut s = scheduler(london(), 0);
+        let mut spec = ScheduleSpec::solar(SolarOffset::new(SolarEvent::Sunrise, 0));
+        spec.days = vec![tpt_app_av_automation_model::Weekday::Sat];
+        s.add(spec);
+        let clock = LocalClock::default();
+        // Monday 2024-01-01 is not a Saturday, so the sunrise on day 0 must not fire.
+        for hour in 0..12u64 {
+            assert!(s.poll(ts(0, hour, 0), clock).is_empty());
+        }
+        // Day 5 is Saturday 2024-01-06, where it does.
+        let saturday_sunrise = target_minute(&london(), 0, 2024, 1, 6, SolarEvent::Sunrise);
+        assert_eq!(s.poll(ts_minutes(5, saturday_sunrise), clock).len(), 1);
+    }
+
+    #[test]
+    fn a_solar_one_shot_fires_exactly_once_ever() {
+        let mut spec = ScheduleSpec::solar(SolarOffset::new(SolarEvent::Sunrise, 0));
+        spec.once = true;
+        let mut s = scheduler(london(), 0);
+        s.add(spec.clone());
+        let clock = LocalClock::default();
+        let sunrise = target_minute(&london(), 0, 2024, 1, 1, SolarEvent::Sunrise);
+        assert_eq!(s.poll(ts_minutes(0, sunrise), clock).len(), 1);
+        for day in 1..10u64 {
+            assert!(
+                s.poll(ts_minutes(day, sunrise), clock).is_empty(),
+                "day {day} must not re-fire a spent one-shot"
+            );
+        }
+        // And it survives a restart from persisted state.
+        let saved = serde_json::to_string(s.state()).unwrap();
+        let mut restarted = scheduler(london(), 0);
+        restarted.add(spec);
+        restarted.restore(serde_json::from_str(&saved).unwrap());
+        assert!(restarted.poll(ts_minutes(20, sunrise), clock).is_empty());
+    }
+
+    #[test]
+    fn an_unparseable_schedule_still_labels_itself() {
+        let spec = ScheduleSpec::solar(SolarOffset::before(SolarEvent::Sunset, 45));
+        assert_eq!(spec.label(), "sunset 45 min before");
+        let after = ScheduleSpec::solar(SolarOffset::new(SolarEvent::Sunrise, 15));
+        assert_eq!(after.label(), "sunrise +15 min");
+    }
+
+    #[test]
+    fn a_solar_schedule_is_identified_by_its_own_label() {
+        let mut s = Scheduler::new();
+        s.add(ScheduleSpec::solar(SolarOffset::new(
+            SolarEvent::Sunrise,
+            0,
+        )));
+        s.add(ScheduleSpec::solar(SolarOffset::new(SolarEvent::Sunset, 0)));
+        s.add(ScheduleSpec::solar(SolarOffset::new(
+            SolarEvent::Sunrise,
+            30,
+        )));
+        assert_eq!(
+            s.len(),
+            3,
+            "identical solar schedules share one entry, distinct ones do not"
+        );
     }
 }

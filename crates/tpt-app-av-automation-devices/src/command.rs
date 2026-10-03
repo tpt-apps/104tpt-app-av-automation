@@ -12,16 +12,24 @@ pub enum Command {
         /// Numeric arguments.
         args: Vec<f64>,
     },
-    /// Send a MIDI 1.0 message.
+    /// Send a MIDI message, in whichever protocol version the target endpoint speaks.
     Midi {
         /// Zero-based channel.
         channel: u8,
-        /// `note_on`, `note_off`, `cc` or `program_change`.
+        /// Message kind; MIDI 1.0 kinds are `note_on`, `note_off`, `cc` and `program_change`, and a
+        /// MIDI 2.0 endpoint additionally accepts the kinds listed on
+        /// [`tpt_app_av_automation_model::ActionSpec::Midi`].
         kind: String,
-        /// Note/CC/program number.
+        /// Note/CC/program number, 0-127.
         number: u8,
         /// Velocity or CC value.
         value: u16,
+        /// UMP port group (0-15). `None` for a MIDI 1.0 port.
+        group: Option<u8>,
+        /// Full 32-bit MIDI 2.0 value; `None` means the value is MIDI 1.0 width.
+        value32: Option<u32>,
+        /// Enumeration index for the MIDI 2.0 kinds that carry one; `None` means index 0.
+        index: Option<u8>,
     },
     /// Write consecutive DMX channels.
     DmxChannels {
@@ -81,11 +89,17 @@ impl Command {
                 kind,
                 number,
                 value,
+                group,
+                value32,
+                index,
             } => Command::Midi {
                 channel: *channel,
                 kind: kind.clone(),
                 number: *number,
                 value: *value,
+                group: *group,
+                value32: *value32,
+                index: *index,
             },
             ActionSpec::DmxChannels {
                 universe,
@@ -144,7 +158,16 @@ impl Command {
                 kind,
                 number,
                 value,
-            } => format!("midi ch{channel} {kind} {number} {value}"),
+                group,
+                value32,
+                ..
+            } => match value32 {
+                Some(v32) => format!(
+                    "midi2 ch{channel} group{} {kind} {number} {v32}",
+                    group.unwrap_or(0)
+                ),
+                None => format!("midi ch{channel} {kind} {number} {value}"),
+            },
             Command::DmxChannels {
                 universe,
                 start_channel,

@@ -126,14 +126,20 @@ impl ServiceConfig {
             out.push(Diagnostic::error("tick_ms", "must be greater than zero"));
         }
         if self.heartbeat_interval_ms == 0 {
-            out.push(Diagnostic::error("heartbeat_interval_ms", "must be greater than zero"));
+            out.push(Diagnostic::error(
+                "heartbeat_interval_ms",
+                "must be greater than zero",
+            ));
         }
         for (i, l) in self.listeners.iter().enumerate() {
-            if !matches!(l.protocol.as_str(), "osc" | "artnet" | "sacn" | "ump" | "midi") {
+            if !matches!(
+                l.protocol.as_str(),
+                "osc" | "artnet" | "sacn" | "ump" | "midi" | "dmx512"
+            ) {
                 out.push(Diagnostic::error(
                     format!("listeners[{i}].protocol"),
                     format!(
-                        "unknown protocol `{}`; expected osc, artnet, sacn, ump or midi",
+                        "unknown protocol `{}`; expected osc, artnet, sacn, ump, midi or dmx512",
                         l.protocol
                     ),
                 ));
@@ -143,6 +149,13 @@ impl ServiceConfig {
                     out.push(Diagnostic::error(
                         format!("listeners[{i}].bind"),
                         "a midi listener needs (part of) the MIDI input port name in `bind`",
+                    ));
+                }
+            } else if l.protocol == "dmx512" {
+                if l.bind.trim().is_empty() {
+                    out.push(Diagnostic::error(
+                        format!("listeners[{i}].bind"),
+                        "a dmx512 listener needs a serial port name in `bind`",
                     ));
                 }
             } else if l.bind.parse::<SocketAddr>().is_err() {
@@ -157,7 +170,10 @@ impl ServiceConfig {
                 Ok(addr) if addr.ip().is_loopback() => {}
                 Ok(addr) => out.push(Diagnostic::error(
                     "api.bind",
-                    format!("the local API only binds to loopback addresses, not {}", addr.ip()),
+                    format!(
+                        "the local API only binds to loopback addresses, not {}",
+                        addr.ip()
+                    ),
                 )),
                 Err(_) => out.push(Diagnostic::error(
                     "api.bind",
@@ -198,7 +214,10 @@ mod tests {
     fn defaults_are_safe() {
         let config = ServiceConfig::default();
         assert!(!config.api.enabled, "API is off by default");
-        assert!(config.exec_allow.is_empty(), "external programs are off by default");
+        assert!(
+            config.exec_allow.is_empty(),
+            "external programs are off by default"
+        );
         assert!(config.state_db.is_none());
         assert!(errors(&config).is_empty());
     }
@@ -235,7 +254,10 @@ mod tests {
             "listeners:\n  - {protocol: osc, bind: \"0.0.0.0:9000\"}\n  - {protocol: bogus, bind: nope}\n",
         )
         .unwrap();
-        assert_eq!(errors(&config), ["listeners[1].protocol", "listeners[1].bind"]);
+        assert_eq!(
+            errors(&config),
+            ["listeners[1].protocol", "listeners[1].bind"]
+        );
     }
 
     #[test]

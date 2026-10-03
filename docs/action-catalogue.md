@@ -6,7 +6,7 @@ records an outcome of **success**, **failed**, **timed_out** or **skipped**.
 | `type` | Key fields | Effect |
 |--------|-----------|--------|
 | `control.osc` | `device`, `address`, `args: [numbers]` | send an OSC message (integral numbers go as `i`, others as `f`) |
-| `control.midi` | `device`, `channel`, `kind`, `number`, `value` | send a MIDI 1.0 message (`note_on`, `note_off`, `cc`, `program_change`) to the device's MIDI output port; ranges are validated |
+| `control.midi` | `device`, `channel`, `kind`, `number`, `value`, `group`, `value32`, `index` | send a MIDI message to the device's output. A `midi` device emits MIDI 1.0 (`note_on`, `note_off`, `cc`, `program_change`, 7-bit `value`). A `ump` device emits MIDI 2.0 Universal MIDI Packets over UDP and also accepts the MIDI 2.0-only kinds (`per_note_rcc`, `per_note_acc`, `rpn`, `nrpn`, `relative_rpn`, `relative_nrpn`, `per_note_pitch_bend`, `polyphonic_pressure`, `channel_pressure`, `pitch_bend`), which carry a 32-bit `value32`. `group` (0-15) selects the UMP port; `index` is the enumeration index for the kinds that carry one. Ranges are validated at load time, and a MIDI 1.0 port rejects `group`/`value32` rather than truncating them |
 | `control.dmx_channels` | `device`, `universe`, `start_channel`, `values`, `transport` | write consecutive channels; merged into the endpoint's universe state and sent as a full frame. `transport` is `art_net`, `sacn` or `dmx512`, and must match the endpoint |
 | `control.dmx_universe` | `device`, `universe`, `values`, `transport` | replace a whole universe |
 | `control.dmx_scene` | `device`, `scene`, `fade_ms` | recall a scene from the device's scene table (`fade_ms` is recorded; fading is not implemented by the Art-Net/sACN endpoints) |

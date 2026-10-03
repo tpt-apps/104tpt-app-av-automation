@@ -42,21 +42,27 @@ pub mod cron;
 pub mod outcome;
 pub mod pack;
 pub mod rule;
+pub mod solar;
 pub mod trigger;
 pub mod validate;
 
-pub use action::{ActionSpec, ActionStep, AlertSeverity, DmxTransport, FailurePolicy, MediaOperation};
+pub use action::{
+    ActionSpec, ActionStep, AlertSeverity, DmxTransport, FailurePolicy, MediaOperation,
+};
 pub use condition::{Comparison, Condition, ConditionSpec};
 pub use cron::{CronError, CronSchedule};
 pub use outcome::{
     ActionOutcome, ActionResultRecord, ConditionResult, ConditionResultRecord, ExecutionRecord,
     ExecutionStatus,
 };
-pub use pack::{FORMAT_VERSION, MAX_CHAIN_LENGTH, RulePack, YamlPackSource};
+pub use pack::{RulePack, YamlPackSource, FORMAT_VERSION, MAX_CHAIN_LENGTH};
 pub use rule::{Policy, Priority, Rule};
+pub use solar::{
+    civil_from_days, solar_day, PolarError, SolarDay, SolarEvent, SolarSite, SUNRISE_ELEVATION_DEG,
+};
 pub use trigger::{
-    DmxComparison, LocalTime, MidiMessageKind, ScheduleMoment, ScheduleSpec, Trigger, TriggerSpec,
-    Weekday,
+    DmxComparison, LocalTime, MidiMessageKind, ScheduleMoment, ScheduleSpec, SolarOffset, Trigger,
+    TriggerSpec, Weekday,
 };
 pub use validate::{cross, steps, validate_pack};
 

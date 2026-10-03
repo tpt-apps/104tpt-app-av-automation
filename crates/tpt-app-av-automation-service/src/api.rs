@@ -436,7 +436,13 @@ pub fn route(req: &Request, handle: &ServiceHandle, token: &str) -> Outcome {
 fn health(handle: &ServiceHandle) -> Value {
     let snapshot = handle.snapshot();
     let count = |h: DeviceHealth| snapshot.devices.iter().filter(|d| d.health == h.to_string()).count();
-    let status = if count(DeviceHealth::Offline) > 0 {
+    let (live_workers, expected_workers) = (handle.live_workers(), handle.expected_workers());
+    let lost_workers = expected_workers.saturating_sub(live_workers);
+    // A lost listener outranks a degraded device: every device is fine, but a protocol has gone
+    // deaf, and reporting "nominal" for that is exactly the failure this status exists to prevent.
+    let status = if lost_workers > 0 {
+        "degraded"
+    } else if count(DeviceHealth::Offline) > 0 {
         "offline"
     } else if count(DeviceHealth::Degraded) > 0 {
         "degraded"
@@ -450,6 +456,11 @@ fn health(handle: &ServiceHandle) -> Value {
         "mode": if snapshot.simulation { "simulation" } else { "live" },
         "rules": snapshot.rules.len(),
         "armed_rules": snapshot.rules.iter().filter(|r| r.armed).count(),
+        "listeners": {
+            "expected": expected_workers,
+            "live": live_workers,
+            "lost": lost_workers,
+        },
         "devices": {
             "total": snapshot.devices.len(),
             "online": count(DeviceHealth::Online),
@@ -508,6 +519,8 @@ pub(crate) fn spawn(handle: ServiceHandle, config: &ApiConfig) -> Result<(Socket
     let active = Arc::new(AtomicUsize::new(0));
 
     let worker = std::thread::spawn(move || {
+        // Counted like a listener: if the accept loop dies, /health must not claim nominal.
+        let _worker = handle.register_worker();
         while !handle.is_shutdown() {
             match listener.accept() {
                 Ok((stream, _)) => {

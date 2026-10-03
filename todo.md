@@ -59,20 +59,30 @@ Phase 4 and 5 are untouched.
 - [x] Implement simulation mode end to end — armed/disarmed default-disarmed behaviour (§3.5, §12.5)
   - _Status:_ engine, CLI, service and API; the always-visible UI indicator waits on the desktop UI.
 - [x] Implement OSC inbound/outbound trigger + action (§7.2, §8.1)
-- [ ] Implement MIDI (1.0/2.0) inbound/outbound trigger + action (§7.2, §8.1)
+- [x] Implement MIDI (1.0/2.0) inbound/outbound trigger + action (§7.2, §8.1)
   - _Status:_ MIDI 1.0 in/out is implemented and tested on live ports opened by name (`midir`);
     MIDI 2.0/UMP is parsed from raw Universal MIDI Packets on a `ump` UDP listener (no desktop
     platform exposes native MIDI 2.0 ports), normalized to the same `MidiLevel` and matched by
-    rules with `group` and 32-bit `value`. What is **not** done: the outbound MIDI 2.0 message
-    encoding (actions emit MIDI 1.0 bytes only), and live `midi`/`ump` ports have **not** been
-    exercised against real hardware — CI has no MIDI interface.
+    rules with `group` and 32-bit `value`. **Outbound MIDI 2.0 is implemented**: `control.midi`
+    accepts `group`, `value32` and `index`, and a `ump` device encodes them as Universal MIDI
+    Packets (`devices::ump`), including all ten MIDI 2.0-only message kinds. A MIDI 1.0 port
+    rejects `group`/`value32` rather than truncating them. What is **not** done: live `midi`/`ump`
+    ports have **not** been exercised against real hardware — CI has no MIDI interface. Note the
+    YAML spelling differs by side: the trigger uses the serde name `control_change`, the action
+    accepts the short label `cc`.
 - [x] Implement DMX/Art-Net/sACN channel-change trigger + output action (§7.2, §8.1)
   - _Status:_ Art-Net and sACN in and out, tested over real sockets; serial DMX512-A output added
   (`dmx512` devices, `devices::dmx_serial`) with driver-generated break framing and lazy reconnect —
-  not tested against a physical adapter. Serial DMX512 *input* is not implemented.
+  not tested against a physical adapter. Serial DMX512 *input* is implemented:
+  `Dmx512Assembler` recovers frame boundaries from inter-byte timing (DMX512 carries no framing of
+  its own), and a `dmx512` service listener reads the port, diffs each frame into channel changes and
+  reconnects after an adapter is unplugged. Not tested against a physical adapter.
 - [x] Implement schedule trigger (cron-like, interval, one-shot) (§7.1)
   - _Status:_ fixed time + weekdays, full five-field cron expressions (`30 18 * * mon-fri`,
-  with ranges, lists, steps and names), interval and one-shot; sunrise/sunset is not supported.
+  with ranges, lists, steps and names), interval and one-shot, and sunrise/sunset-relative schedules
+  (`solar: {event: sunset, minutes: -30}`) computed offline from a pack-level `site` using the NOAA
+  solar-position algorithm (`model::solar`). Polar days report why they never fire rather than being
+  given a made-up time.
 - [x] Implement device online/offline/degraded trigger + heartbeat-missed trigger (§7.3, §11)
 - [x] Implement manual/API-invoked trigger (§7.6)
 - [x] Implement notify-operator action (§8.3)
@@ -103,14 +113,20 @@ Phase 4 and 5 are untouched.
 - [x] Implement local API, disabled by default, `127.0.0.1`-only, token auth when enabled (`/rules`, `/devices`, `/executions`, `/health`, `/events` WS) (§14)
   - _Status:_ REST plus the `/events` WebSocket; also `/incidents` and execution cancel.
 - [x] Implement inbound control-message validation + rate limiting/backoff (§16)
-  - _Status:_ validation and per-source rate limiting; there is no adaptive backoff.
+  - _Status:_ size and event-count limits, bounded universe tracking, per-source token-bucket rate
+    limiting and adaptive backoff (`core::rate_limit`): a source that keeps ignoring its budget is
+    muted for a doubling window up to `backoff_max_ms`, and recovers as soon as it behaves.
 - [x] Implement sandboxed, timeout-bounded external-script/subprocess action (§8.4)
   - _Status:_ disabled by default; allow-list only; see `docs/action-catalogue.md`.
 
 ## Phase 2 — Testing Strategy (§18)
 
-- [ ] Unit tests for every trigger/condition/action: valid, invalid, boundary, malformed input cases (§18.1)
-  - _Status:_ broad coverage (model, conditions, endpoints, inbound, golden), but no per-item valid/invalid/boundary/malformed matrix has been audited, so this stays open.
+- [x] Unit tests for every trigger/condition/action: valid, invalid, boundary, malformed input cases (§18.1)
+  - _Status:_ `tests/matrix.rs` covers all 9 trigger types, 6 condition types and 13 action types on
+    every axis — valid form, invalid field, boundary value and malformed document. It asserts the
+    matrix is complete, so adding a catalogue form without a case fails. Two validation gaps it
+    found are now fixed: a `dmx_channel` condition was not bounds-checked against the universe, and
+    a `rule_armed` condition naming a rule that does not exist was not reported.
 - [x] Build virtual/simulated device fixtures: OSC, MIDI, DMX, Art-Net, sACN, media-sources, with fault injection (dropped/delayed/offline) (§18.2)
   - _Status:_ `VirtualEndpoint` (any protocol) with dropped, delayed, timed-out and offline-after-N faults; inbound sources are driven over real loopback sockets.
 - [x] Build golden rule-pack regression tests with recorded event sequences and expected execution traces (§18.3)
@@ -153,8 +169,14 @@ Phase 4 and 5 are untouched.
 
 - [ ] Benchmark and profile under sustained live-event-like event load
   - _Status:_ throughput benchmark done (≈265k events/s release, `docs/reliability.md`); no profiler run, no device-latency measurements.
-- [ ] Harden error handling and failure isolation
-  - _Status:_ panic isolation, bounded queues/cascades/history, persistence-failure isolation are in; a systematic audit is still to do.
+- [x] Harden error handling and failure isolation
+  - _Status:_ panic isolation, bounded queues/cascades/history and persistence-failure isolation are
+    in. A systematic audit of every `unwrap`/`expect`/panic in production code is done, and it fixed
+    two real gaps: the inbound rate limiter and the fixed clock propagated a poisoned lock where the
+    rest of the workspace recovers (16 sites), and a panicking listener thread was lost with no
+    indication at all. Workers are now counted, and `/health` reports
+    `listeners: {expected, live, lost}` and drops to `degraded` when one is lost. The remaining
+    `expect`s are in the test-rig crates and in provably-unreachable post-check positions.
 - [x] Package Windows release
   - _Status:_ `scripts/package-windows.ps1` builds a static-CRT zip with SHA-256 and smoke-tests it; unsigned, no installer or Windows-service wrapper.
 - [ ] Validate headless Linux service deployment

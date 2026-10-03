@@ -37,6 +37,13 @@ pub struct RulePack {
     /// Declared pack revision, for diffing and history.
     #[serde(default = "default_revision")]
     pub revision: u32,
+    /// The venue's coordinates, used by sunrise and sunset schedules (spec §7.1).
+    ///
+    /// Optional: a pack with no solar schedule does not need one. When a solar schedule is present
+    /// it is required, because a solar crossing cannot be computed without knowing where on the
+    /// Earth the venue is.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub site: Option<crate::solar::SolarSite>,
     /// The rules in this pack. Order is preserved and is the load order.
     #[serde(default, rename = "rules")]
     pub rules: Vec<Rule>,
@@ -58,6 +65,7 @@ impl RulePack {
             description: None,
             revision: 1,
             rules: Vec::new(),
+            site: None,
             action_library: BTreeMap::new(),
         }
     }

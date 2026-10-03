@@ -59,6 +59,13 @@ is a rule like any other: visible, testable in simulation, versioned.
   [trigger catalogue](trigger-catalogue.md)); the event queue is bounded and overflow is counted.
 * Event cascades are capped, and rule invocation depth is capped and cycle-checked.
 * The local API enforces size/time limits and a connection cap, and never panics on malformed HTTP.
+* Every shared lock in the engine recovers from poisoning rather than propagating it. This matters
+  most for the inbound rate limiter, which runs on every datagram of every protocol listener: a
+  panic there would take that listener down, and because the process stays up the watchdog would not
+  notice.
+* A listener or API thread that dies is counted, not forgotten. `/health` reports
+  `listeners: {expected, live, lost}` and reports `degraded` when one is lost, so a protocol that
+  has silently stopped being received cannot hide behind every device looking healthy.
 
 ## Measured throughput
 

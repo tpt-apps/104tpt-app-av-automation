@@ -159,7 +159,11 @@ impl Engine {
             .iter()
             .map(|r| (r.id.as_str().to_owned(), r.armed))
             .collect();
-        let scheduler = Scheduler::from_rules(pack.rules.iter());
+        let scheduler = Scheduler::from_rules(
+            pack.rules.iter(),
+            pack.site,
+            config.local_clock.utc_offset_minutes,
+        );
         Ok(Self {
             pack,
             armed,
@@ -209,7 +213,11 @@ impl Engine {
             armed.insert(rule.id.as_str().to_owned(), was_armed);
         }
         let memory = self.scheduler.state().clone();
-        self.scheduler = Scheduler::from_rules(pack.rules.iter());
+        self.scheduler = Scheduler::from_rules(
+            pack.rules.iter(),
+            pack.site,
+            self.config.local_clock.utc_offset_minutes,
+        );
         self.scheduler.restore(memory);
         self.armed = armed;
         self.pack = pack;

@@ -87,13 +87,31 @@ pub enum ActionSpec {
     Midi {
         /// Zero-based channel.
         channel: u8,
-        /// Message kind: `note_on`, `note_off`, `cc`, `program_change`.
+        /// Message kind.
+        ///
+        /// `note_on`, `note_off`, `cc` and `program_change` are MIDI 1.0 and are accepted by both
+        /// `midi` and `ump` devices. The remaining kinds are MIDI 2.0-only and require a `ump`
+        /// device: `per_note_rcc`, `per_note_acc`, `rpn`, `nrpn`, `relative_rpn`, `relative_nrpn`,
+        /// `per_note_pitch_bend`, `polyphonic_pressure`, `channel_pressure` and `pitch_bend`.
         kind: String,
-        /// Note/CC/program number.
+        /// Note/CC/program number, 0-127. For `rpn`/`nrpn` this is the parameter index; for the
+        /// per-note kinds it is the note number.
         number: u8,
-        /// Value: velocity or CC value.
+        /// Value: velocity or CC value, 7-bit for MIDI 1.0 kinds and up to 14-bit for `pitch_bend`
+        /// on a MIDI 1.0 port.
         #[serde(default)]
         value: u16,
+        /// UMP port group (0-15). Required for a `ump` device, rejected for a `midi` device.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        group: Option<u8>,
+        /// The full 32-bit MIDI 2.0 value. Requires a `ump` device; a MIDI 1.0 port rejects it
+        /// rather than silently truncating to 16 bits.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        value32: Option<u32>,
+        /// Enumeration index for the kinds that carry one: `per_note_rcc`, `per_note_acc`, `rpn`,
+        /// `nrpn`, `relative_rpn` and `relative_nrpn`. Ignored by every other kind.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        index: Option<u8>,
     },
     /// Set consecutive DMX channels (spec §8.1).
     #[serde(rename = "control.dmx_channels")]

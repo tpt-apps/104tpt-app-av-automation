@@ -120,6 +120,25 @@ fn authed(addr: SocketAddr, method: &str, path: &str) -> (u16, Value) {
     http(addr, method, path, &[("Authorization", &format!("Bearer {TOKEN}"))])
 }
 
+#[test]
+fn health_reports_the_listener_threads_it_starts() {
+    let mut c = config();
+    let osc_port = free_udp_port();
+    c.listeners.push(tpt_app_av_automation_service::ListenerConfig {
+        protocol: "osc".into(),
+        bind: format!("127.0.0.1:{osc_port}"),
+    });
+    let running = Running::start(build(PACK, c, None, Arc::new(SystemClock)));
+    let addr = running.handle.api_addr().expect("api address");
+
+    // The OSC listener and the API worker are both counted, and neither has been lost.
+    let (_, body) = authed(addr, "GET", "/health");
+    assert_eq!(body["listeners"]["expected"], 2);
+    assert_eq!(body["listeners"]["live"], 2);
+    assert_eq!(body["listeners"]["lost"], 0);
+    assert_eq!(body["status"], "nominal");
+}
+
 fn osc_packet(address: &str, args: &[OscArg]) -> Vec<u8> {
     OscMessage::new(address, args).unwrap().encode()
 }

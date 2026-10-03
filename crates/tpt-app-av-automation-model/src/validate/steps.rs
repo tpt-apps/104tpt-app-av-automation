@@ -6,10 +6,13 @@ use tpt_app_av_automation_core::Diagnostic;
 
 use crate::action::ActionSpec;
 use crate::pack::MAX_CHAIN_LENGTH;
+use crate::trigger::MidiMessageKind;
 
 /// Whether a diagnostic list contains at least one error.
 pub fn has_errors(diagnostics: &[Diagnostic]) -> bool {
-    diagnostics.iter().any(|d| d.severity == tpt_app_av_automation_core::Severity::Error)
+    diagnostics
+        .iter()
+        .any(|d| d.severity == tpt_app_av_automation_core::Severity::Error)
 }
 
 /// Validates one action chain.
@@ -100,43 +103,20 @@ pub fn validate_action_spec(spec: &ActionSpec, loc: &str, diagnostics: &mut Vec<
             kind,
             number,
             value,
-        } => {
-            if *channel > 15 {
-                diagnostics.push(Diagnostic::error(
-                    format!("{loc}.channel"),
-                    "MIDI channel must be 0-15",
-                ));
-            }
-            if *number > 127 {
-                diagnostics.push(Diagnostic::error(
-                    format!("{loc}.number"),
-                    "MIDI number must be 0-127",
-                ));
-            }
-            if *value > 16383 {
-                diagnostics.push(Diagnostic::error(
-                    format!("{loc}.value"),
-                    "MIDI value out of range (7-bit 0-127, 14-bit 0-16383)",
-                ));
-            }
-            if !matches!(
-                kind.as_str(),
-                "note_on" | "note_off" | "cc" | "program_change"
-            ) {
-                diagnostics.push(Diagnostic::error(
-                    format!("{loc}.kind"),
-                    format!(
-                        "unknown MIDI message kind `{kind}`; expected note_on, note_off, cc or program_change"
-                    ),
-                ));
-            }
-            if kind == "program_change" && *value > 127 {
-                diagnostics.push(Diagnostic::error(
-                    format!("{loc}.value"),
-                    "program_change value must be 0-127",
-                ));
-            }
-        }
+            group,
+            value32,
+            index,
+        } => validate_midi(
+            loc,
+            channel,
+            kind,
+            number,
+            value,
+            group,
+            value32,
+            index,
+            diagnostics,
+        ),
         ActionSpec::DmxChannels {
             universe,
             start_channel,
@@ -165,7 +145,9 @@ pub fn validate_action_spec(spec: &ActionSpec, loc: &str, diagnostics: &mut Vec<
                 ));
             }
         }
-        ActionSpec::DmxUniverse { universe, values, .. } => {
+        ActionSpec::DmxUniverse {
+            universe, values, ..
+        } => {
             if values.len() > 512 {
                 diagnostics.push(Diagnostic::error(
                     format!("{loc}.values"),
@@ -264,6 +246,132 @@ pub fn validate_action_spec(spec: &ActionSpec, loc: &str, diagnostics: &mut Vec<
                     "library key must not be empty",
                 ));
             }
+        }
+    }
+}
+
+/// Validates one `control.midi` action (spec §8.1).
+///
+/// The checks split by protocol version. On a MIDI 1.0 port the value is 7-bit. A MIDI 2.0 (UMP)
+/// endpoint is strictly wider — velocity became 16-bit and every other data field became 32-bit —
+/// so `value32` widens the message rather than replacing `value`, and a MIDI 2.0-only message kind
+/// is an error without one. The target device's protocol is not known here (the model crate must
+/// stay free of the device registry), so the version is inferred from what the action asks for and
+/// the device check is left to engine load time.
+#[allow(clippy::too_many_arguments)]
+fn validate_midi(
+    loc: &str,
+    channel: &u8,
+    kind: &str,
+    number: &u8,
+    value: &u16,
+    group: &Option<u8>,
+    value32: &Option<u32>,
+    index: &Option<u8>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    let message = MidiMessageKind::parse(kind);
+    if message.is_none() {
+        diagnostics.push(Diagnostic::error(
+            format!("{loc}.kind"),
+            format!(
+                "unknown MIDI message kind `{kind}`; expected one of {}",
+                MidiMessageKind::names().collect::<Vec<_>>().join(", ")
+            ),
+        ));
+    }
+    if *channel > 15 {
+        diagnostics.push(Diagnostic::error(
+            format!("{loc}.channel"),
+            format!("MIDI channel must be 0-15, got {channel}"),
+        ));
+    }
+    if *number > 127 {
+        diagnostics.push(Diagnostic::error(
+            format!("{loc}.number"),
+            format!("MIDI number must be 0-127, got {number}"),
+        ));
+    }
+    if let Some(group) = group {
+        if *group > 15 {
+            diagnostics.push(Diagnostic::error(
+                format!("{loc}.group"),
+                format!("UMP group must be 0-15, got {group}"),
+            ));
+        }
+    }
+    if let Some(index) = index {
+        if *index > 127 {
+            diagnostics.push(Diagnostic::error(
+                format!("{loc}.index"),
+                format!("MIDI index must be 0-127, got {index}"),
+            ));
+        } else if let Some(kind) = message.filter(|m| !m.carries_index()) {
+            diagnostics.push(Diagnostic::warning(
+                format!("{loc}.index"),
+                format!("`{kind}` carries no enumeration index; `index` is ignored"),
+            ));
+        }
+    }
+
+    let Some(kind) = message else { return };
+
+    if kind.is_midi2_only() {
+        match value32 {
+            None => diagnostics.push(Diagnostic::error(
+                format!("{loc}.value32"),
+                format!(
+                    "`{kind}` is a MIDI 2.0 message and needs a `value32`; it also needs a `ump` target device"
+                ),
+            )),
+            Some(v32) if *v32 > kind.max_value32() => diagnostics.push(Diagnostic::error(
+                format!("{loc}.value32"),
+                if kind.velocity() {
+                    format!("MIDI 2.0 velocity must fit in 16 bits, got {v32}")
+                } else {
+                    format!("MIDI 2.0 value must fit in 32 bits, got {v32}")
+                },
+            )),
+            Some(_) => {
+                if *value != 0 {
+                    diagnostics.push(Diagnostic::warning(
+                        format!("{loc}.value"),
+                        format!("`{kind}` sends `value32`; the 16-bit `value` is ignored"),
+                    ));
+                }
+            }
+        }
+        return;
+    }
+
+    // A MIDI 1.0 kind. `value32` promotes the message to MIDI 2.0 so the full range is reachable;
+    // without it the value has to fit the 1.0 field for this kind.
+    let ceiling = if value32.is_some() {
+        u32::from(u16::MAX)
+    } else {
+        127
+    };
+    if u32::from(*value) > ceiling {
+        diagnostics.push(Diagnostic::error(
+            format!("{loc}.value"),
+            format!("MIDI value must be 0-{ceiling} for `{kind}`, got {value}"),
+        ));
+    }
+    if let Some(v32) = value32 {
+        if *v32 > kind.max_value32() {
+            diagnostics.push(Diagnostic::error(
+                format!("{loc}.value32"),
+                if kind.velocity() {
+                    format!("MIDI 2.0 velocity must fit in 16 bits, got {v32}")
+                } else {
+                    format!("MIDI 2.0 value must fit in 32 bits, got {v32}")
+                },
+            ));
+        } else if group.is_none() {
+            diagnostics.push(Diagnostic::warning(
+                format!("{loc}.group"),
+                "`value32` needs a UMP port, so the target must be a `ump` device and `group` selects its port",
+            ));
         }
     }
 }

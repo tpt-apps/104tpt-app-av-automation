@@ -21,7 +21,7 @@ use tpt_app_av_automation_core::{Diagnostic, Error, Result};
 
 use crate::condition::ConditionSpec;
 use crate::cron::CronSchedule;
-use crate::pack::{FORMAT_VERSION, RulePack};
+use crate::pack::{RulePack, FORMAT_VERSION};
 use crate::rule::Rule;
 use crate::trigger::{DmxComparison, TriggerSpec};
 
@@ -66,7 +66,7 @@ pub fn validate_pack(pack: &RulePack) -> Result<Vec<Diagnostic>> {
     let mut seen_ids: HashSet<String> = HashSet::new();
     for (index, rule) in pack.rules.iter().enumerate() {
         let base = format!("rules[{index}]");
-        validate_rule(rule, &base, &mut diagnostics);
+        validate_rule(rule, &base, pack.site.as_ref(), &mut diagnostics);
 
         if rule.id.as_str().trim().is_empty() {
             diagnostics.push(Diagnostic::error(
@@ -89,7 +89,12 @@ pub fn validate_pack(pack: &RulePack) -> Result<Vec<Diagnostic>> {
     Ok(diagnostics)
 }
 
-fn validate_rule(rule: &Rule, base: &str, diagnostics: &mut Vec<Diagnostic>) {
+fn validate_rule(
+    rule: &Rule,
+    base: &str,
+    site: Option<&crate::solar::SolarSite>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
     if rule.name.trim().is_empty() {
         diagnostics.push(Diagnostic::error(
             format!("{base}.name"),
@@ -97,7 +102,13 @@ fn validate_rule(rule: &Rule, base: &str, diagnostics: &mut Vec<Diagnostic>) {
         ));
     }
 
-    validate_trigger(&rule.trigger, &format!("{base}.trigger"), diagnostics);
+    validate_trigger(
+        &rule.trigger,
+        &format!("{base}.trigger"),
+        base,
+        site,
+        diagnostics,
+    );
 
     let mut condition_ids: HashSet<String> = HashSet::new();
     for (index, condition) in rule.conditions.iter().enumerate() {
@@ -121,6 +132,50 @@ fn validate_rule(rule: &Rule, base: &str, diagnostics: &mut Vec<Diagnostic>) {
                 ));
             }
         }
+        // A DMX condition is bounded by the universe exactly as a DMX trigger is; without this a
+        // rule can gate on a channel that can never carry a value and silently never pass.
+        if let ConditionSpec::DmxChannel {
+            universe, channel, ..
+        } = &condition.spec
+        {
+            if *channel > 511 {
+                diagnostics.push(Diagnostic::error(
+                    format!("{loc}.channel"),
+                    format!("DMX channel {channel} is outside 0-511"),
+                ));
+            }
+            if *universe > 32767 {
+                diagnostics.push(Diagnostic::error(
+                    format!("{loc}.universe"),
+                    "universe number is out of range",
+                ));
+            }
+        }
+        if let ConditionSpec::DeviceHealth { device, .. } = &condition.spec {
+            if device.trim().is_empty() {
+                diagnostics.push(Diagnostic::error(
+                    format!("{loc}.device"),
+                    "device must not be empty",
+                ));
+            }
+        }
+        if let ConditionSpec::DeviceParameter {
+            device, parameter, ..
+        } = &condition.spec
+        {
+            if device.trim().is_empty() {
+                diagnostics.push(Diagnostic::error(
+                    format!("{loc}.device"),
+                    "device must not be empty",
+                ));
+            }
+            if parameter.trim().is_empty() {
+                diagnostics.push(Diagnostic::error(
+                    format!("{loc}.parameter"),
+                    "parameter must not be empty",
+                ));
+            }
+        }
     }
 
     steps::validate_chain(&rule.actions, &format!("{base}.actions"), diagnostics);
@@ -137,7 +192,8 @@ fn validate_rule(rule: &Rule, base: &str, diagnostics: &mut Vec<Diagnostic>) {
         ));
     }
 
-    if rule.policy.on_failure == crate::FailurePolicy::RunFallback && rule.policy.fallback.is_empty()
+    if rule.policy.on_failure == crate::FailurePolicy::RunFallback
+        && rule.policy.fallback.is_empty()
     {
         diagnostics.push(Diagnostic::error(
             format!("{base}.policy.on_failure"),
@@ -157,7 +213,11 @@ fn validate_rule(rule: &Rule, base: &str, diagnostics: &mut Vec<Diagnostic>) {
         .iter()
         .map(|s| s.timeout_ms.unwrap_or(s.estimated_cost_ms))
         .sum();
-    if rule.policy.timeout_ms.is_some_and(|budget| estimated > budget) {
+    if rule
+        .policy
+        .timeout_ms
+        .is_some_and(|budget| estimated > budget)
+    {
         diagnostics.push(Diagnostic::warning(
             format!("{base}.policy.timeout_ms"),
             format!(
@@ -167,29 +227,52 @@ fn validate_rule(rule: &Rule, base: &str, diagnostics: &mut Vec<Diagnostic>) {
     }
 }
 
-fn validate_trigger(trigger: &crate::Trigger, loc: &str, diagnostics: &mut Vec<Diagnostic>) {
+fn validate_trigger(
+    trigger: &crate::Trigger,
+    loc: &str,
+    base: &str,
+    site: Option<&crate::solar::SolarSite>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
     match &trigger.spec {
         TriggerSpec::Schedule(spec) => {
             let forms = usize::from(spec.at.is_some())
                 + usize::from(spec.cron.is_some())
+                + usize::from(spec.solar.is_some())
                 + usize::from(spec.interval_ms.is_some());
             if forms == 0 {
                 diagnostics.push(Diagnostic::error(
                     loc,
-                    "schedule trigger needs one of `at`, `cron` or `interval_ms`",
+                    "schedule trigger needs one of `at`, `cron`, `solar` or `interval_ms`",
                 ));
             } else if forms > 1 {
                 diagnostics.push(Diagnostic::error(
                     loc,
-                    "schedule trigger must use exactly one of `at`, `cron` or `interval_ms`",
+                    "schedule trigger must use exactly one of `at`, `cron`, `solar` or `interval_ms`",
                 ));
+            }
+            if let Some(solar) = &spec.solar {
+                // A solar crossing needs the site, and the site has to be a real place on Earth.
+                if !site.is_some_and(|s| s.is_valid()) {
+                    diagnostics.push(Diagnostic::error(
+                        format!("{base}.site"),
+                        format!(
+                            "a `solar` schedule needs a pack-level `site` with a valid latitude (-90 to 90) and longitude (-180 to 180)"
+                        ),
+                    ));
+                }
+                // An offset of more than a day cannot be meant: it would schedule a time on the
+                // wrong day and only fire if the sun happened to cross at that minute.
+                if solar.minutes.abs() > 720 {
+                    diagnostics.push(Diagnostic::error(
+                        format!("{loc}.solar.minutes"),
+                        "a solar offset must be within +/- 12 hours of the crossing",
+                    ));
+                }
             }
             if let Some(expression) = &spec.cron {
                 if let Err(e) = CronSchedule::parse(expression) {
-                    diagnostics.push(Diagnostic::error(
-                        format!("{loc}.cron"),
-                        e.to_string(),
-                    ));
+                    diagnostics.push(Diagnostic::error(format!("{loc}.cron"), e.to_string()));
                 }
                 if !spec.days.is_empty() {
                     diagnostics.push(Diagnostic::error(
@@ -261,7 +344,12 @@ fn validate_trigger(trigger: &crate::Trigger, loc: &str, diagnostics: &mut Vec<D
                 ));
             }
         }
-        TriggerSpec::Dmx { universe, channel, comparison, .. } => {
+        TriggerSpec::Dmx {
+            universe,
+            channel,
+            comparison,
+            ..
+        } => {
             if *channel > 511 {
                 diagnostics.push(Diagnostic::error(
                     format!("{loc}.channel"),
@@ -309,7 +397,10 @@ fn validate_trigger(trigger: &crate::Trigger, loc: &str, diagnostics: &mut Vec<D
         }
         TriggerSpec::Api { name } => {
             if let Some(name) = name {
-                if !name.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.')) {
+                if !name
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.'))
+                {
                     diagnostics.push(Diagnostic::error(
                         format!("{loc}.name"),
                         "API name may contain only letters, digits, `_`, `-` and `.`",

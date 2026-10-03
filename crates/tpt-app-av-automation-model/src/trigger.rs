@@ -8,6 +8,7 @@ use tpt_app_av_automation_core::{DeviceHealth, Event, Result};
 
 use crate::condition::Comparison;
 use crate::cron::CronSchedule;
+use crate::solar::SolarEvent;
 
 /// The local wall-clock fields a schedule is evaluated against.
 ///
@@ -23,6 +24,9 @@ pub struct ScheduleMoment {
     pub day_of_month: Option<u32>,
     /// Month of the local year, 1-12, when known.
     pub month: Option<u32>,
+    /// Days since 1970-01-01 in the local calendar. Needed to turn a date back into a year for the
+    /// solar calculation, which needs a full calendar date.
+    pub day_index: i64,
 }
 
 impl ScheduleMoment {
@@ -33,6 +37,7 @@ impl ScheduleMoment {
             weekday_index,
             day_of_month: None,
             month: None,
+            day_index: 0,
         }
     }
 }
@@ -149,6 +154,36 @@ impl LocalTime {
         (self.hour as u32) * 60 + self.minute as u32
     }
 }
+/// A schedule expressed relative to a solar crossing (spec §7.1).
+///
+/// The offset is in minutes and may be negative, so `-30` is thirty minutes before the crossing and
+/// `30` is thirty minutes after it. Only `sunrise` and `sunset` are meaningful: there is no other
+/// solar event a venue automates on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SolarOffset {
+    /// Which crossing to follow.
+    pub event: SolarEvent,
+    /// Minutes after the crossing; negative fires before it.
+    #[serde(default)]
+    pub minutes: i32,
+}
+
+impl SolarOffset {
+    /// A schedule `minutes` after `event`.
+    pub fn new(event: SolarEvent, minutes: i32) -> Self {
+        Self { event, minutes }
+    }
+
+    /// A schedule `minutes` before `event`.
+    pub fn before(event: SolarEvent, minutes: i32) -> Self {
+        Self {
+            event,
+            minutes: -minutes,
+        }
+    }
+}
+
 /// A time-based trigger specification (spec §7.1).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -156,6 +191,16 @@ pub struct ScheduleSpec {
     /// Fire at this local wall-clock time.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub at: Option<LocalTime>,
+    /// Fire this many minutes after sunrise or sunset at the pack's site.
+    ///
+    /// The one form that follows the sun, which is what exterior venue lighting needs: "house
+    /// lights 30 minutes before sunset" means something different every day and is wrong twice a
+    /// year if written as a fixed `at` time. A negative offset fires before the event, so `-30`
+    /// is half an hour of daylight and `30` is half an hour of dusk.
+    ///
+    /// Requires a `site` on the pack: a solar crossing cannot be computed without coordinates.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub solar: Option<SolarOffset>,
     /// Fire on a five-field cron expression, `minute hour day-of-month month day-of-week`.
     ///
     /// An alternative to `at` for anything a single time-of-day cannot express: several minutes per
@@ -179,6 +224,7 @@ impl ScheduleSpec {
     pub fn daily(at: LocalTime) -> Self {
         Self {
             at: Some(at),
+            solar: None,
             cron: None,
             interval_ms: None,
             days: Vec::new(),
@@ -190,6 +236,7 @@ impl ScheduleSpec {
     pub fn interval(interval_ms: u64) -> Self {
         Self {
             at: None,
+            solar: None,
             cron: None,
             interval_ms: Some(interval_ms),
             days: Vec::new(),
@@ -201,6 +248,7 @@ impl ScheduleSpec {
     pub fn one_shot(at: LocalTime, days: Vec<Weekday>) -> Self {
         Self {
             at: Some(at),
+            solar: None,
             cron: None,
             interval_ms: None,
             days,
@@ -215,7 +263,20 @@ impl ScheduleSpec {
     pub fn cron(expression: impl Into<String>) -> Self {
         Self {
             at: None,
+            solar: None,
             cron: Some(expression.into()),
+            interval_ms: None,
+            days: Vec::new(),
+            once: false,
+        }
+    }
+
+    /// The parsed cron expression, if this schedule has a valid one.
+    pub fn solar(offset: SolarOffset) -> Self {
+        Self {
+            at: None,
+            solar: Some(offset),
+            cron: None,
             interval_ms: None,
             days: Vec::new(),
             once: false,
@@ -231,6 +292,19 @@ impl ScheduleSpec {
     pub fn label(&self) -> String {
         if let Some(interval) = self.interval_ms {
             return format!("every:{interval}ms");
+        }
+        if let Some(solar) = self.solar {
+            // A negative offset reads as "before", which is how an operator writes it.
+            let body = if solar.minutes < 0 {
+                format!("{} {} min before", solar.event, -solar.minutes)
+            } else {
+                format!("{} +{} min", solar.event, solar.minutes)
+            };
+            return if self.once {
+                format!("{body} (once)")
+            } else {
+                body
+            };
         }
         if let Some(cron) = self.parsed_cron() {
             let body = format!("cron {}", cron.to_expression());
@@ -278,7 +352,10 @@ impl ScheduleSpec {
     /// current local minute equals the target, so a scheduler polling every 30s fires exactly once
     /// and the answer depends only on the supplied time, never on poll timing.
     pub fn due_at(&self, now_minutes_since_midnight: u32, weekday_index: usize) -> bool {
-        self.due_minute(&ScheduleMoment::at(now_minutes_since_midnight, weekday_index))
+        self.due_minute(&ScheduleMoment::at(
+            now_minutes_since_midnight,
+            weekday_index,
+        ))
     }
 
     /// Whether this schedule is due at the given local wall-clock moment.
@@ -353,6 +430,12 @@ pub enum MidiMessageKind {
     PerNoteManagement,
 }
 
+impl std::fmt::Display for MidiMessageKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 impl MidiMessageKind {
     /// The canonical string form used in normalized events.
     pub fn as_str(self) -> &'static str {
@@ -403,6 +486,49 @@ impl MidiMessageKind {
                 | MidiMessageKind::ControlChange
                 | MidiMessageKind::ProgramChange
         )
+    }
+
+    /// Parses a canonical kind name.
+    pub fn parse(text: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|k| k.as_str() == text)
+    }
+
+    /// Every canonical kind name, in declaration order.
+    pub fn names() -> impl Iterator<Item = &'static str> {
+        Self::ALL.into_iter().map(Self::as_str)
+    }
+
+    /// Whether this kind carries an enumeration `index` alongside its number.
+    ///
+    /// The per-note controller kinds and the four parameter-number kinds address a specific
+    /// controller or parameter, so they carry an enumeration index; the rest are addressed by
+    /// `number` alone.
+    pub fn carries_index(self) -> bool {
+        matches!(
+            self,
+            MidiMessageKind::PerNoteRcc
+                | MidiMessageKind::PerNoteAcc
+                | MidiMessageKind::Rpn
+                | MidiMessageKind::Nrpn
+                | MidiMessageKind::RelativeRpn
+                | MidiMessageKind::RelativeNrpn
+        )
+    }
+
+    /// Whether this kind's data field is a velocity, which MIDI 2.0 widened to 16 bits.
+    pub fn velocity(self) -> bool {
+        matches!(self, MidiMessageKind::NoteOn | MidiMessageKind::NoteOff)
+    }
+
+    /// The largest legal `value32` for this kind.
+    ///
+    /// Velocity is 16-bit in MIDI 2.0; every other data field is the full 32 bits.
+    pub fn max_value32(self) -> u32 {
+        if self.velocity() {
+            u16::MAX as u32
+        } else {
+            u32::MAX
+        }
     }
 }
 
@@ -552,7 +678,9 @@ impl TriggerSpec {
         match self {
             TriggerSpec::Schedule(_) => crate::trigger::schedule_keys().contains(&key),
             TriggerSpec::Osc { .. } => ["address", "arg_equals", "min_args"].contains(&key),
-            TriggerSpec::Midi { .. } => ["message", "channel", "number", "value", "group"].contains(&key),
+            TriggerSpec::Midi { .. } => {
+                ["message", "channel", "number", "value", "group"].contains(&key)
+            }
             TriggerSpec::Dmx { .. } => {
                 ["universe", "channel", "comparison", "value"].contains(&key)
             }

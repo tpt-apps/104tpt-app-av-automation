@@ -5,6 +5,7 @@ use std::collections::{HashMap, HashSet};
 use tpt_app_av_automation_core::Diagnostic;
 
 use crate::action::ActionSpec;
+use crate::condition::ConditionSpec;
 use crate::pack::RulePack;
 use crate::rule::Rule;
 
@@ -14,7 +15,31 @@ use super::steps::validate_action_spec;
 pub fn validate_cross_references(pack: &RulePack, diagnostics: &mut Vec<Diagnostic>) {
     validate_library(pack, diagnostics);
     validate_invocations(pack, diagnostics);
+    validate_rule_condition_references(pack, diagnostics);
     diagnostics.extend(detect_invocation_cycles(pack));
+}
+
+/// Validates `rule_armed` conditions against the pack's rule ids.
+///
+/// A `rule_armed` condition that names a rule which does not exist can never be met, so the rule
+/// holding it would sit armed and never fire. That is the same class of mistake as an
+/// `invoke_rule` naming a missing rule, and it is caught here rather than at runtime.
+fn validate_rule_condition_references(pack: &RulePack, diagnostics: &mut Vec<Diagnostic>) {
+    let known: HashSet<&str> = pack.rules.iter().map(|r| r.id.as_str()).collect();
+    for (index, rule) in pack.rules.iter().enumerate() {
+        for (position, condition) in rule.conditions.iter().enumerate() {
+            if let ConditionSpec::RuleArmed { rule: target } = &condition.spec {
+                if !known.contains(target.as_str()) {
+                    diagnostics.push(Diagnostic::error(
+                        format!("rules[{index}].conditions[{position}].rule"),
+                        format!(
+                            "rule_armed targets unknown rule `{target}`, so this condition can never be met"
+                        ),
+                    ));
+                }
+            }
+        }
+    }
 }
 
 fn validate_library(pack: &RulePack, diagnostics: &mut Vec<Diagnostic>) {

@@ -5,9 +5,9 @@
 | Crate | Used for | Status |
 |-------|----------|--------|
 | `tpt-av-control-osc` | OSC encode/decode (inbound triggers, outbound actions) | integrated |
-| `tpt-av-control-midi` | MIDI 1.0 encode/parse, and MIDI 2.0/UMP parsing (triggers and actions) | integrated. Live MIDI 1.0 ports are opened by name through `midir` (see below) — **not tested against real hardware**. MIDI 2.0 arrives as raw UMP on a `ump` UDP listener, because no desktop platform exposes native MIDI 2.0 ports to `midir` |
+| `tpt-av-control-midi` | MIDI 1.0 encode/parse, and MIDI 2.0/UMP parse and encode (triggers and actions) | integrated. Live MIDI 1.0 ports are opened by name through `midir` (see below) — **not tested against real hardware**. MIDI 2.0 arrives as raw UMP on a `ump` UDP listener and is sent the same way to a `ump` device, because no desktop platform exposes native MIDI 2.0 ports to `midir` |
 | `tpt-av-control-dmx` | ArtDmx and E1.31 packet build/parse | integrated |
-| `serialport` (third party) | DMX512-A framing over a serial adapter | integrated. **Not tested against hardware** — CI has no USB-to-DMX adapter |
+| `serialport` (third party) | DMX512-A framing over a serial adapter, in both directions | integrated. **Not tested against hardware** — CI has no USB-to-DMX adapter |
 | `tpt-av-control-utils` | shared error type | transitively |
 | `tpt-kinetix` | media start/stop/switch | **not integrated** — it is a codec/pipeline library with no source-control API to call |
 | `tpt-cadence` | audio routing | not integrated |
@@ -37,7 +37,7 @@ engine. The encoding, range validation, reconnect logic and "no such port" paths
 sending to and receiving from a physical MIDI interface has **not** been verified in an automated
 test, because CI has none.
 
-## DMX512 serial output
+## DMX512 serial, in and out
 
 A `dmx512` device writes DMX512-A frames to a serial adapter (`devices::dmx_serial`):
 
@@ -61,6 +61,25 @@ universe is rejected at load time (`dmx512` scenes are checked by `DeviceFile::v
 at send time. Channel writes merge into the universe exactly as they do on Art-Net/sACN, and the
 merged state is committed only once a frame has actually gone out — a failed send leaves the
 universe showing what the fixtures last *received*.
+
+### Reading a DMX line back
+
+A `dmx512` listener reads a port as well as writing one:
+
+```yaml
+# service.yaml
+listeners:
+  - { protocol: dmx512, bind: "COM3" }
+```
+
+Reading is harder than writing because DMX512 has no framing of its own: there is no length, no
+start code on the wire and no checksum, so a receiver recovers the structure purely from how long
+the line was idle. `Dmx512Assembler` does exactly that — a gap of at least 92 us is a break, and
+the bytes after it are the slots. A frame is returned only once all 512 slots have arrived, so a
+line that drops mid-frame is never mistaken for a complete one, and a truncated frame is counted
+rather than silently discarded. The resulting frame is diffed into the same channel-change events
+Art-Net and sACN produce, so a rule does not care which transport delivered them. The port opens
+lazily and reopens after a failure, so an adapter unplugged mid-show recovers without a restart.
 
 This is output only: a rule cannot trigger on DMX read back from the adapter. Framing, universe
 bookkeeping, reconnect and the "universe 1 only" rule are unit-tested against a fake port; sending to
@@ -86,7 +105,7 @@ least 16 characters is required. Every request needs `Authorization: Bearer <tok
 
 | Method | Path | |
 |--------|------|-|
-| GET | `/health` | status (`nominal`/`degraded`/`offline`), mode, rule and device counts, rejected-traffic counters |
+| GET | `/health` | status (`nominal`/`degraded`/`offline`), mode, rule and device counts, rejected-traffic counters, and `listeners` (`expected`/`live`/`lost` worker threads) |
 | GET | `/rules` | id, name, version, **armed**, priority, trigger, tags |
 | GET | `/devices` | id, protocol, health, last seen |
 | GET | `/executions` | `rule`, `status`, `device`, `simulated`, `since`, `until`, `limit` (≤ 1000) |

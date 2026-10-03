@@ -175,8 +175,8 @@ impl Inbound {
         if !self.admit(source, bytes, now)? {
             return Ok(Vec::new());
         }
-        let packet = parse_osc_packet(bytes)
-            .map_err(|e| Error::MalformedMessage(format!("osc: {e:?}")))?;
+        let packet =
+            parse_osc_packet(bytes).map_err(|e| Error::MalformedMessage(format!("osc: {e:?}")))?;
         let mut events = Vec::new();
         flatten_osc(&packet, &mut events, self.limits.max_events_per_packet)?;
         Ok(events)
@@ -278,6 +278,16 @@ impl Inbound {
             Some(packet) => self.track_dmx(packet.universe, &packet.slots),
             None => Ok(Vec::new()),
         }
+    }
+
+    /// Feeds a DMX512-A frame read from a serial line, reducing it to channel-change events.
+    ///
+    /// The same diffing the Art-Net and sACN paths use is applied, so a rule that matches a
+    /// channel change cannot tell (and does not need to know) which transport delivered it. A
+    /// serial port is one universe, so `universe` is always 1.
+    pub fn dmx_frame(&self, universe: u16, slots: &[u8], now: Timestamp) -> Result<Vec<Event>> {
+        self.admit(&format!("dmx512/u{universe}"), slots, now)?;
+        self.track_dmx(universe, slots)
     }
 
     fn track_dmx(&self, universe: u16, slots: &[u8]) -> Result<Vec<Event>> {
@@ -434,9 +444,7 @@ fn midi2_level(cv: &Midi2ChannelVoice) -> MidiLevel {
             (u32::from(*bank_msb) << 16) | (u32::from(*bank_lsb) << 8) | u32::from(*program),
         ),
         V::ChannelPressure {
-            channel,
-            pressure,
-            ..
+            channel, pressure, ..
         } => ("channel_pressure", *channel, 0, *pressure),
         V::PitchBend { channel, value, .. } => ("pitch_bend", *channel, 0, *value),
         V::PerNoteManagement { channel, note, .. } => ("per_note_management", *channel, *note, 0),
@@ -455,7 +463,9 @@ fn flatten_osc(packet: &OscPacket, out: &mut Vec<Event>, limit: usize) -> Result
     match packet {
         OscPacket::Message(message) => {
             if out.len() >= limit {
-                return Err(Error::MalformedMessage("osc bundle expands to too many messages".into()));
+                return Err(Error::MalformedMessage(
+                    "osc bundle expands to too many messages".into(),
+                ));
             }
             // Only numeric arguments are exposed to rules; strings, blobs and the like are skipped.
             let args = message
@@ -498,7 +508,11 @@ mod tests {
     fn osc_message_becomes_numeric_event() {
         let gate = Inbound::default();
         let events = gate
-            .osc("a", &osc_bytes("/cue/1", &[OscArg::Int(1), OscArg::Float(0.5)]), now())
+            .osc(
+                "a",
+                &osc_bytes("/cue/1", &[OscArg::Int(1), OscArg::Float(0.5)]),
+                now(),
+            )
             .unwrap();
         assert_eq!(
             events,
@@ -513,7 +527,11 @@ mod tests {
     fn osc_non_numeric_arguments_are_skipped() {
         let gate = Inbound::default();
         let events = gate
-            .osc("a", &osc_bytes("/x", &[OscArg::String("go".into()), OscArg::Int(2)]), now())
+            .osc(
+                "a",
+                &osc_bytes("/x", &[OscArg::String("go".into()), OscArg::Int(2)]),
+                now(),
+            )
             .unwrap();
         assert_eq!(
             events,
@@ -548,7 +566,12 @@ mod tests {
     #[test]
     fn malformed_and_oversized_traffic_is_rejected_not_fatal() {
         let gate = Inbound::default();
-        for bad in [&b""[..], b"\x00", b"not osc at all", b"#bundle\0\xff\xff\xff\xff"] {
+        for bad in [
+            &b""[..],
+            b"\x00",
+            b"not osc at all",
+            b"#bundle\0\xff\xff\xff\xff",
+        ] {
             assert!(gate.osc("a", bad, now()).is_err(), "{bad:?}");
         }
         let huge = vec![b'/'; 10_000];
@@ -556,7 +579,10 @@ mod tests {
             gate.osc("a", &huge, now()),
             Err(Error::MalformedMessage(_))
         ));
-        assert!(gate.midi("a", b"\xff\xff", now()).is_ok() || gate.midi("a", b"\xff\xff", now()).is_err());
+        assert!(
+            gate.midi("a", b"\xff\xff", now()).is_ok()
+                || gate.midi("a", b"\xff\xff", now()).is_err()
+        );
         assert!(gate.artnet("a", b"Art-Net\0\x00\x50", now()).is_err());
         assert!(gate.sacn("a", &[0u8; 40], now()).is_err());
     }
@@ -600,9 +626,20 @@ mod tests {
             Some(5),
             vec![
                 OscPacket::Message(
-                    OscMessage::new("/a/b", &[OscArg::Int(1), OscArg::Float(2.5), OscArg::String("x".into())]).unwrap(),
+                    OscMessage::new(
+                        "/a/b",
+                        &[
+                            OscArg::Int(1),
+                            OscArg::Float(2.5),
+                            OscArg::String("x".into()),
+                        ],
+                    )
+                    .unwrap(),
                 ),
-                OscPacket::Bundle(OscBundle::new(None, vec![OscPacket::Message(OscMessage::new("/c", &[]).unwrap())])),
+                OscPacket::Bundle(OscBundle::new(
+                    None,
+                    vec![OscPacket::Message(OscMessage::new("/c", &[]).unwrap())],
+                )),
             ],
         )
         .encode();
@@ -676,7 +713,10 @@ mod tests {
                 ..Default::default()
             })]
         );
-        assert!(gate.midi("m", &[0xF8], now()).unwrap().is_empty(), "clock is not a trigger");
+        assert!(
+            gate.midi("m", &[0xF8], now()).unwrap().is_empty(),
+            "clock is not a trigger"
+        );
     }
 
     #[test]
@@ -684,7 +724,9 @@ mod tests {
         let gate = Inbound::default();
         let mut frame = [0u8; 512];
         frame[4] = 200;
-        let first = gate.artnet("n", &build_artdmx(1, 0, &frame), now()).unwrap();
+        let first = gate
+            .artnet("n", &build_artdmx(1, 0, &frame), now())
+            .unwrap();
         assert_eq!(
             first,
             vec![Event::Dmx(DmxLevel {
@@ -693,10 +735,18 @@ mod tests {
                 value: 200
             })]
         );
-        assert!(gate.artnet("n", &build_artdmx(1, 1, &frame), now()).unwrap().is_empty());
+        assert!(gate
+            .artnet("n", &build_artdmx(1, 1, &frame), now())
+            .unwrap()
+            .is_empty());
         frame[4] = 10;
         frame[5] = 1;
-        assert_eq!(gate.artnet("n", &build_artdmx(1, 2, &frame), now()).unwrap().len(), 2);
+        assert_eq!(
+            gate.artnet("n", &build_artdmx(1, 2, &frame), now())
+                .unwrap()
+                .len(),
+            2
+        );
     }
 
     #[test]
@@ -725,8 +775,13 @@ mod tests {
         let frame = [1u8; 512];
         assert!(gate.artnet("n", &build_artdmx(1, 0, &frame), now()).is_ok());
         assert!(gate.artnet("n", &build_artdmx(2, 0, &frame), now()).is_ok());
-        assert!(gate.artnet("n", &build_artdmx(3, 0, &frame), now()).is_err());
-        assert!(gate.artnet("n", &build_artdmx(1, 1, &frame), now()).is_ok(), "known universes still work");
+        assert!(gate
+            .artnet("n", &build_artdmx(3, 0, &frame), now())
+            .is_err());
+        assert!(
+            gate.artnet("n", &build_artdmx(1, 1, &frame), now()).is_ok(),
+            "known universes still work"
+        );
     }
 
     /// Builds a UMP packet from a MIDI 2.0 message.
@@ -824,9 +879,9 @@ mod tests {
         assert!(gate
             .ump(
                 "m",
-                &ump_bytes(&Midi2Message::SystemCommon(SystemCommonMessage::ActiveSensing {
-                    group: 0,
-                })),
+                &ump_bytes(&Midi2Message::SystemCommon(
+                    SystemCommonMessage::ActiveSensing { group: 0 }
+                )),
                 now()
             )
             .unwrap()
@@ -940,10 +995,16 @@ mod tests {
             .sum();
         assert_eq!(delivered, 3);
         assert_eq!(gate.rate_limited(), 7);
-        assert_eq!(gate.osc("quiet", &msg, now()).unwrap().len(), 1, "other sources unaffected");
+        assert_eq!(
+            gate.osc("quiet", &msg, now()).unwrap().len(),
+            1,
+            "other sources unaffected"
+        );
         // The budget refills with time.
         assert_eq!(
-            gate.osc("noisy", &msg, Timestamp::from_millis(2_000)).unwrap().len(),
+            gate.osc("noisy", &msg, Timestamp::from_millis(2_000))
+                .unwrap()
+                .len(),
             1
         );
     }
@@ -968,13 +1029,23 @@ mod tests {
 
         // Inside the mute the source is rejected before the packet is even parsed, and a
         // different source is unaffected.
-        assert!(gate.osc("noisy", &msg, Timestamp::from_millis(50)).unwrap().is_empty());
+        assert!(gate
+            .osc("noisy", &msg, Timestamp::from_millis(50))
+            .unwrap()
+            .is_empty());
         assert_eq!(gate.backed_off(), 1);
-        assert_eq!(gate.osc("quiet", &msg, Timestamp::from_millis(50)).unwrap().len(), 1);
+        assert_eq!(
+            gate.osc("quiet", &msg, Timestamp::from_millis(50))
+                .unwrap()
+                .len(),
+            1
+        );
 
         // Once the mute expires the source is admitted again.
         assert_eq!(
-            gate.osc("noisy", &msg, Timestamp::from_millis(100)).unwrap().len(),
+            gate.osc("noisy", &msg, Timestamp::from_millis(100))
+                .unwrap()
+                .len(),
             1
         );
         assert_eq!(gate.muted_for_ms("noisy", Timestamp::from_millis(100)), 0);

@@ -3,7 +3,7 @@
 
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::net::{IpAddr, SocketAddr, ToSocketAddrs, UdpSocket};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender, SyncSender, TrySendError};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
@@ -15,6 +15,7 @@ use tpt_app_av_automation_actions::{
     Actions, ExecPolicy, Incident, IncidentSink, ThreadSleeper, TracingSink,
 };
 use tpt_app_av_automation_core::{Clock, DeviceHealth, Error, Event, Result, Timestamp};
+use tpt_app_av_automation_devices::dmx_serial::{Dmx512Assembler, DmxSerialReader};
 use tpt_app_av_automation_devices::{build_endpoint, DeviceFile, DeviceRegistry, Endpoint};
 use tpt_app_av_automation_engine::{CancelHandle, Engine, EngineConfig, Mode};
 use tpt_app_av_automation_model::{has_errors, ExecutionRecord, RulePack};
@@ -113,6 +114,26 @@ pub struct InboundStats {
     pub queue_dropped: AtomicU64,
 }
 
+/// Keeps a worker thread's slot in [ServiceHandle::live_workers] while it runs.
+///
+/// The guard exists so that a listener which *panics* is counted the same as one which returns.
+/// Nothing else in the runtime notices a thread dying: the process stays up, the engine keeps
+/// ticking and /health keeps answering, so without this a single panicking listener would
+/// silently remove one protocol from the running configuration for the rest of the show.
+pub(crate) struct WorkerGuard {
+    live: Arc<AtomicUsize>,
+    reported: AtomicBool,
+}
+
+impl Drop for WorkerGuard {
+    fn drop(&mut self) {
+        self.live.fetch_sub(1, Ordering::SeqCst);
+        // One message per worker, on the way out of an unwind that may be unwinding already.
+        if !self.reported.swap(true, Ordering::SeqCst) {
+            tracing::error!("a listener thread exited unexpectedly; that protocol is no longer receiving");
+        }
+    }
+}
 /// A cloneable handle for talking to a running (or about-to-run) service.
 #[derive(Clone)]
 pub struct ServiceHandle {
@@ -126,9 +147,41 @@ pub struct ServiceHandle {
     ready: Arc<AtomicBool>,
     pub(crate) stats: Arc<InboundStats>,
     pub(crate) inbound: Arc<Inbound>,
+    /// Listener/API threads currently running.
+    ///
+    /// A listener that panics takes only its own thread down, and the process keeps serving
+    /// `/health` as if nothing had happened, so the loss has to be counted and reported or one
+    /// protocol goes quietly deaf. See [`WorkerGuard`].
+    live_workers: Arc<AtomicUsize>,
+    /// Listener/API threads this run started, for comparison against `live_workers`.
+    expected_workers: Arc<AtomicUsize>,
 }
 
 impl ServiceHandle {
+    /// Registers a worker thread as expected to run, returning its liveness guard.
+    ///
+    /// Holding the guard for as long as the thread runs is what makes a dead listener visible:
+    /// [Self::live_workers] falls back the moment the thread exits, whether it returned or
+    /// unwound.
+    pub(crate) fn register_worker(&self) -> WorkerGuard {
+        self.expected_workers.fetch_add(1, Ordering::SeqCst);
+        self.live_workers.fetch_add(1, Ordering::SeqCst);
+        WorkerGuard {
+            live: self.live_workers.clone(),
+            reported: AtomicBool::new(false),
+        }
+    }
+
+    /// Listener/API threads still running.
+    pub fn live_workers(&self) -> usize {
+        self.live_workers.load(Ordering::SeqCst)
+    }
+
+    /// Listener/API threads this run started.
+    pub fn expected_workers(&self) -> usize {
+        self.expected_workers.load(Ordering::SeqCst)
+    }
+
     /// Asks the service to stop.
     pub fn shutdown(&self) {
         self.shutdown.store(true, Ordering::SeqCst);
@@ -175,13 +228,19 @@ impl ServiceHandle {
     /// Subscribes to the live execution stream; each message is one JSON document.
     pub fn subscribe(&self) -> Receiver<String> {
         let (tx, rx) = mpsc::channel();
-        self.subscribers.lock().unwrap_or_else(|e| e.into_inner()).push(tx);
+        self.subscribers
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(tx);
         rx
     }
 
     /// The current snapshot.
     pub fn snapshot(&self) -> Snapshot {
-        self.snapshot.lock().unwrap_or_else(|e| e.into_inner()).clone()
+        self.snapshot
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 
     /// The bound API address, once the API is up.
@@ -289,7 +348,11 @@ impl Service {
         }
 
         let engine_config = EngineConfig {
-            mode: if config.simulate { Mode::Simulation } else { Mode::Live },
+            mode: if config.simulate {
+                Mode::Simulation
+            } else {
+                Mode::Live
+            },
             local_clock: LocalClock::new(config.utc_offset_minutes),
             ..EngineConfig::default()
         };
@@ -331,6 +394,8 @@ impl Service {
             ready: Arc::new(AtomicBool::new(false)),
             stats: Arc::new(InboundStats::default()),
             inbound: Arc::new(Inbound::new(InboundLimits::default())),
+            live_workers: Arc::new(AtomicUsize::new(0)),
+            expected_workers: Arc::new(AtomicUsize::new(0)),
         };
         let mut service = Self {
             engine,
@@ -359,7 +424,11 @@ impl Service {
     pub fn run(mut self) -> Result<()> {
         let mut workers: Vec<JoinHandle<()>> = Vec::new();
         for listener in self.config.listeners.clone() {
-            workers.push(spawn_listener(&listener, self.handle.clone(), self.device_by_ip.clone())?);
+            workers.push(spawn_listener(
+                &listener,
+                self.handle.clone(),
+                self.device_by_ip.clone(),
+            )?);
         }
         if self.config.api.enabled {
             let (addr, worker) = crate::api::spawn(self.handle.clone(), &self.config.api)?;
@@ -417,7 +486,11 @@ impl Service {
             }
             if last_ping.elapsed() >= ping {
                 last_ping = Instant::now();
-                let probes: Vec<_> = self.probes.iter().map(|(id, ep)| (id.clone(), ep.clone())).collect();
+                let probes: Vec<_> = self
+                    .probes
+                    .iter()
+                    .map(|(id, ep)| (id.clone(), ep.clone()))
+                    .collect();
                 for (id, endpoint) in probes {
                     if endpoint.ping().is_ok() {
                         if let Ok(records) = self.engine.device_heartbeat(&id) {
@@ -486,14 +559,22 @@ impl Service {
                 tracing::error!("could not prune execution history: {e}");
             }
         }
-        let mut subscribers = self.handle.subscribers.lock().unwrap_or_else(|e| e.into_inner());
+        let mut subscribers = self
+            .handle
+            .subscribers
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         for record in records {
             if let Ok(line) = serde_json::to_string(record) {
                 subscribers.retain(|tx| tx.send(line.clone()).is_ok());
             }
         }
         drop(subscribers);
-        let mut snapshot = self.handle.snapshot.lock().unwrap_or_else(|e| e.into_inner());
+        let mut snapshot = self
+            .handle
+            .snapshot
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         for record in records {
             snapshot.recent.push_back(record.clone());
             while snapshot.recent.len() > RECENT_LIMIT {
@@ -541,7 +622,11 @@ impl Service {
                 last_seen_ms: d.last_seen.map(Timestamp::as_millis),
             })
             .collect();
-        let mut snapshot = self.handle.snapshot.lock().unwrap_or_else(|e| e.into_inner());
+        let mut snapshot = self
+            .handle
+            .snapshot
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         snapshot.pack_name = self.engine.pack().name.clone();
         snapshot.simulation = self.engine.mode() == Mode::Simulation;
         snapshot.rules = rules;
@@ -571,14 +656,16 @@ impl IncidentSink for StoreIncidents {
 /// Listens on a MIDI input port, reconnecting if it is not (yet) present.
 fn spawn_midi_listener(port: String, handle: ServiceHandle) -> JoinHandle<()> {
     std::thread::spawn(move || {
+        let _worker = handle.register_worker();
         let mut connection = None;
         let mut warned = false;
         while !handle.is_shutdown() {
             if connection.is_none() {
                 let h = handle.clone();
                 let source = format!("midi:{port}");
-                let opened = tpt_app_av_automation_devices::midi_port::open_input(&port, move |bytes| {
-                    match h.inbound.midi(&source, bytes, Timestamp::now()) {
+                let opened = tpt_app_av_automation_devices::midi_port::open_input(
+                    &port,
+                    move |bytes| match h.inbound.midi(&source, bytes, Timestamp::now()) {
                         Ok(events) => {
                             for event in events {
                                 h.send_event(event);
@@ -588,8 +675,8 @@ fn spawn_midi_listener(port: String, handle: ServiceHandle) -> JoinHandle<()> {
                             h.stats.malformed.fetch_add(1, Ordering::Relaxed);
                             tracing::debug!("rejected inbound MIDI message: {e}");
                         }
-                    }
-                });
+                    },
+                );
                 match opened {
                     Ok(c) => {
                         tracing::info!("listening on MIDI input `{port}`");
@@ -612,6 +699,75 @@ fn spawn_midi_listener(port: String, handle: ServiceHandle) -> JoinHandle<()> {
     })
 }
 
+/// Reads a DMX512-A serial line, reconnecting if the adapter is not (yet) present.
+///
+/// The port delivers bytes with no framing of its own, so [`Dmx512Assembler`] recovers the break
+/// boundaries and hands back whole frames; each frame is diffed into channel changes exactly as
+/// Art-Net and sACN are, so rules do not depend on the transport.
+fn spawn_dmx512_listener(port: String, handle: ServiceHandle) -> JoinHandle<()> {
+    std::thread::spawn(move || {
+        let _worker = handle.register_worker();
+        let mut reader: Option<Box<dyn DmxSerialReader>> = None;
+        let mut assembler = Dmx512Assembler::new();
+        let mut warned = false;
+        while !handle.is_shutdown() {
+            if reader.is_none() {
+                match tpt_app_av_automation_devices::dmx_serial::open_reader(&port, 100) {
+                    Ok(r) => {
+                        tracing::info!("listening on DMX512 serial port `{port}`");
+                        // A reopened adapter starts mid-frame, so any partial state is discarded.
+                        assembler = Dmx512Assembler::new();
+                        reader = Some(r);
+                        warned = false;
+                    }
+                    Err(e) if !warned => {
+                        tracing::warn!("DMX512 port not available yet ({e}); will keep retrying");
+                        warned = true;
+                    }
+                    Err(_) => {}
+                }
+            }
+            if let Some(r) = reader.as_mut() {
+                match r.read_timed() {
+                    Ok(bytes) => {
+                        for frame in assembler.push_all(&bytes) {
+                            let result =
+                                handle
+                                    .inbound
+                                    .dmx_frame(1, frame.payload(), Timestamp::now());
+                            match result {
+                                Ok(events) => {
+                                    handle.send_heartbeat(&port);
+                                    for event in events {
+                                        handle.send_event(event);
+                                    }
+                                }
+                                Err(e) => {
+                                    handle.stats.malformed.fetch_add(1, Ordering::Relaxed);
+                                    tracing::debug!("rejected inbound DMX512 frame: {e}");
+                                }
+                            }
+                        }
+                    }
+                    // An adapter pulled mid-show drops the handle so the next pass reopens it,
+                    // rather than spinning on a dead port.
+                    Err(e) => {
+                        tracing::warn!("DMX512 read failed ({e}); reopening the port");
+                        reader = None;
+                        continue;
+                    }
+                }
+            }
+            for _ in 0..5 {
+                if handle.is_shutdown() {
+                    return;
+                }
+                std::thread::sleep(Duration::from_millis(20));
+            }
+        }
+    })
+}
+
 fn spawn_listener(
     config: &ListenerConfig,
     handle: ServiceHandle,
@@ -620,19 +776,32 @@ fn spawn_listener(
     if config.protocol == "midi" {
         return Ok(spawn_midi_listener(config.bind.clone(), handle));
     }
-    let socket = UdpSocket::bind(&config.bind)
-        .map_err(|e| Error::Control(format!("cannot listen on {} ({}): {e}", config.bind, config.protocol)))?;
+    if config.protocol == "dmx512" {
+        return Ok(spawn_dmx512_listener(config.bind.clone(), handle));
+    }
+    let socket = UdpSocket::bind(&config.bind).map_err(|e| {
+        Error::Control(format!(
+            "cannot listen on {} ({}): {e}",
+            config.bind, config.protocol
+        ))
+    })?;
     socket
         .set_read_timeout(Some(Duration::from_millis(100)))
         .map_err(|e| Error::Control(e.to_string()))?;
     let protocol = config.protocol.clone();
     Ok(std::thread::spawn(move || {
+        let _worker = handle.register_worker();
         let mut buf = vec![0u8; 8192];
         let mut last_seen: BTreeMap<String, Instant> = BTreeMap::new();
         while !handle.is_shutdown() {
             let (n, from) = match socket.recv_from(&mut buf) {
                 Ok(v) => v,
-                Err(e) if matches!(e.kind(), std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut) => {
+                Err(e)
+                    if matches!(
+                        e.kind(),
+                        std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+                    ) =>
+                {
                     continue
                 }
                 Err(e) => {
@@ -672,4 +841,82 @@ fn spawn_listener(
             }
         }
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A handle with no engine behind it, which is all the worker accounting needs.
+    fn bare_handle() -> ServiceHandle {
+        let (tx, _rx) = std::sync::mpsc::sync_channel(1);
+        ServiceHandle {
+            tx,
+            snapshot: Arc::new(Mutex::new(Snapshot::default())),
+            store: None,
+            subscribers: Arc::new(Mutex::new(Vec::new())),
+            shutdown: Arc::new(AtomicBool::new(false)),
+            cancel: CancelHandle::default(),
+            api_addr: Arc::new(Mutex::new(None)),
+            ready: Arc::new(AtomicBool::new(false)),
+            stats: Arc::new(InboundStats::default()),
+            inbound: Arc::new(Inbound::new(InboundLimits::default())),
+            live_workers: Arc::new(AtomicUsize::new(0)),
+            expected_workers: Arc::new(AtomicUsize::new(0)),
+        }
+    }
+
+    #[test]
+    fn a_worker_is_counted_while_it_runs_and_unaccounted_when_it_stops() {
+        let handle = bare_handle();
+        let guard = handle.register_worker();
+        assert_eq!(handle.expected_workers(), 1);
+        assert_eq!(handle.live_workers(), 1);
+        assert_eq!(handle.live_workers(), handle.expected_workers());
+
+        drop(guard);
+        assert_eq!(
+            handle.live_workers(),
+            0,
+            "a stopped worker is no longer live"
+        );
+        assert_eq!(
+            handle.expected_workers(),
+            1,
+            "but it is still expected, which is what makes the loss visible"
+        );
+        assert!(handle.live_workers() < handle.expected_workers());
+    }
+
+    #[test]
+    fn a_worker_that_panics_is_still_unaccounted() {
+        // The whole point of the guard: a thread that unwinds must release its slot exactly as a
+        // thread that returns does, otherwise a panic leaves the service reporting "nominal"
+        // while a protocol has stopped being received.
+        let handle = bare_handle();
+        let worker = handle.clone();
+        let panicked = std::thread::spawn(move || {
+            let _guard = worker.register_worker();
+            panic!("listener died");
+        });
+        assert!(panicked.join().is_err(), "the thread really did panic");
+        // The slot is released as the unwinding thread exits.
+        assert_eq!(handle.live_workers(), 0);
+        assert_eq!(handle.expected_workers(), 1);
+    }
+
+    #[test]
+    fn workers_are_counted_independently() {
+        let handle = bare_handle();
+        let a = handle.register_worker();
+        let b = handle.register_worker();
+        assert_eq!(handle.live_workers(), 2);
+        assert_eq!(handle.expected_workers(), 2);
+        drop(a);
+        assert_eq!(handle.live_workers(), 1);
+        assert_eq!(handle.expected_workers(), 2);
+        drop(b);
+        assert_eq!(handle.live_workers(), 0);
+        assert_eq!(handle.expected_workers(), 2);
+    }
 }

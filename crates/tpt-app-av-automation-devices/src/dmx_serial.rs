@@ -1,10 +1,17 @@
-//! Serial DMX512-A output (spec §5.1, §8.1).
+//! Serial DMX512-A output **and input** (spec §5.1, §7.2, §8.1).
 //!
 //! A DMX512-A frame on the wire is not just 512 data bytes: it is a **break** (at least 92 us of
 //! low), a mark after the break (at least 8 us), a **start** code (at least 8 us of low), the 512
 //! slot values, and a mark after the data. Everything except the slot bytes is produced by holding
 //! the line low or letting it idle, so this module hands the [`DmxSerialPort`] implementation the
 //! two halves — break and payload — rather than pretending a 513-byte `write` is a valid frame.
+//!
+//! Reading a DMX512 line back is the same problem from the other side, and harder: there is no
+//! framing in the byte stream itself. A receiver must time the gaps between bytes to find the
+//! break that starts each frame. [`Dmx512Assembler`] does exactly that, turning
+//! `(byte, microseconds since the previous byte)` pairs from a serial port into whole
+//! [`Dmx512Frame`]s, and is driven by a [`DmxSerialReader`] so the framing is testable with a fake
+//! port — CI has no USB-to-DMX adapter.
 //!
 //! The engine never merges universes across transports: an Art-Net or sACN endpoint keeps one
 //! 512-slot buffer per universe, whereas a serial port *is* one universe. A `dmx512` device
@@ -296,10 +303,216 @@ pub fn available_ports() -> Vec<String> {
         .map(|ports| ports.into_iter().map(|p| p.port_name).collect())
         .unwrap_or_default()
 }
+/// A byte read from a DMX line, with the time since the previous byte.
+///
+/// The inter-byte gap is what carries the framing: a DMX512 slot byte occupies 44 us (4 us per bit,
+/// 11 bits) at 250 kbaud, while a break is at least 92 us. A receiver cannot tell a break from a
+/// slot by content, only by how long the line was idle.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TimedByte {
+    /// The byte value, 0-255.
+    pub byte: u8,
+    /// Microseconds since the previously reported byte.
+    pub gap_micros: u32,
+}
+
+/// A DMX512 serial line this module can read.
+///
+/// Implemented over `serialport` in production (see [`open_reader`]) and by a fake in tests.
+pub trait DmxSerialReader: Send {
+    /// Reads whatever bytes have arrived, each with its gap since the previous one.
+    ///
+    /// Returns an empty vector when nothing has arrived yet; a timeout must not be reported as an
+    /// error, because a DMX line is idle between refreshes.
+    fn read_timed(&mut self) -> Result<Vec<TimedByte>, String>;
+}
+
+/// Opens a [`DmxSerialReader`] on demand, for reconnect after an adapter is unplugged.
+pub type DmxReaderOpener = Box<dyn Fn() -> Result<Box<dyn DmxSerialReader>, String> + Send + Sync>;
+
+/// Where the assembler is in a frame.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+enum AssemblyState {
+    /// Waiting for a gap long enough to be a break.
+    #[default]
+    Idle,
+    /// A break was seen; the next byte is the start code and the 512 slots follow.
+    InFrame {
+        /// How many bytes have been seen since the break, including the start code.
+        seen: usize,
+    },
+}
+
+/// Turns a timed byte stream into whole DMX512-A frames.
+///
+/// DMX512 carries no length, checksum or framing in the data stream, so a receiver recovers the
+/// structure purely from timing: a gap of at least [`BREAK_MICROS`] is a break, and the next
+/// [`DMX_CHANNELS`] bytes after it are the slots. A frame is returned only once all 512 slots have
+/// arrived, so a line that drops mid-frame can never be mistaken for a complete one.
+#[derive(Debug, Default)]
+pub struct Dmx512Assembler {
+    state: AssemblyState,
+    slots: Vec<u8>,
+    /// Bytes discarded because they arrived with no break in front of them.
+    dropped_bytes: u64,
+    /// Frames discarded because the line stopped before all 512 slots arrived.
+    dropped_frames: u64,
+}
+
+impl Dmx512Assembler {
+    /// A fresh assembler waiting for the first break.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Bytes seen outside a frame, which is normal between frames.
+    pub fn dropped_bytes(&self) -> u64 {
+        self.dropped_bytes
+    }
+
+    /// Frames that began but never delivered 512 slots.
+    pub fn dropped_frames(&self) -> u64 {
+        self.dropped_frames
+    }
+
+    /// Feeds one timed byte, returning the frame when the 512th slot completes it.
+    pub fn push(&mut self, timed: TimedByte) -> Option<Dmx512Frame> {
+        match self.state {
+            AssemblyState::Idle => {
+                if timed.gap_micros >= BREAK_MICROS {
+                    // The break is idle time, not a byte. The byte that follows it is the
+                    // frame's start code, consumed here; it is not one of the 512 slots, and
+                    // every byte after it is slot data until the next break.
+                    self.state = AssemblyState::InFrame { seen: 0 };
+                    self.slots.clear();
+                } else {
+                    // Idle-line noise between frames.
+                    self.dropped_bytes += 1;
+                }
+                None
+            }
+            AssemblyState::InFrame { seen } => {
+                if timed.gap_micros >= BREAK_MICROS {
+                    // A break arrived before the frame filled: the link truncated it, so the
+                    // partial slots are discarded and this byte starts the next frame. Counting
+                    // the loss is what makes a failing line visible instead of it silently
+                    // delivering nothing.
+                    self.dropped_frames += 1;
+                    self.state = AssemblyState::InFrame { seen: 0 };
+                    self.slots.clear();
+                    return None;
+                }
+                let seen = seen + 1;
+                self.slots.push(timed.byte);
+                if self.slots.len() < DMX_CHANNELS {
+                    self.state = AssemblyState::InFrame { seen };
+                    return None;
+                }
+                self.state = AssemblyState::Idle;
+                let frame = Dmx512Frame::from_slots(&self.slots);
+                self.slots.clear();
+                frame
+            }
+        }
+    }
+
+    /// Feeds a run of timed bytes, returning every complete frame in order.
+    pub fn push_all(&mut self, bytes: &[TimedByte]) -> Vec<Dmx512Frame> {
+        bytes.iter().filter_map(|b| self.push(*b)).collect()
+    }
+}
 
 /// An opener that opens `port_name` on each call, for reconnect-after-failure.
 pub fn port_opener(port_name: String, timeout_ms: u64) -> DmxSerialOpener {
     Box::new(move || open_port(&port_name, timeout_ms))
+}
+
+/// Opens a DMX line for reading at the DMX512-A baud rate.
+pub fn open_reader(port_name: &str, timeout_ms: u64) -> Result<Box<dyn DmxSerialReader>, String> {
+    let port = serialport::new(port_name, BAUD)
+        .timeout(std::time::Duration::from_millis(timeout_ms))
+        .data_bits(serialport::DataBits::Eight)
+        .parity(serialport::Parity::None)
+        .stop_bits(serialport::StopBits::One)
+        .flow_control(serialport::FlowControl::None)
+        .open()
+        .map_err(|e| format!("cannot open DMX serial port `{port_name}`: {e}"))?;
+    Ok(Box::new(SerialPortReader {
+        port,
+        last_read: std::time::Instant::now(),
+        pending: std::collections::VecDeque::new(),
+    }))
+}
+
+/// An opener that opens `port_name` for reading on each call.
+pub fn reader_opener(port_name: String, timeout_ms: u64) -> DmxReaderOpener {
+    Box::new(move || open_reader(&port_name, timeout_ms))
+}
+
+/// Reads timed bytes from a real `serialport` port.
+///
+/// A serial port hands back a buffer of bytes and no per-byte timestamps, so the gaps are
+/// reconstructed here: within one buffer a byte is one slot time from its predecessor, and the gap
+/// before the first byte is measured from the end of the previous read. That is only approximate
+/// for a break that falls inside a buffer, which is why a partial frame is discarded rather than
+/// completed — the next break re-frames the stream correctly.
+struct SerialPortReader {
+    port: Box<dyn serialport::SerialPort>,
+    last_read: std::time::Instant,
+    /// Bytes read but not yet reported, kept so a partial read still carries its gaps.
+    pending: std::collections::VecDeque<u8>,
+}
+
+impl SerialPortReader {
+    /// The nominal time one slot byte occupies on the wire.
+    const SLOT_MICROS: u32 = 44;
+}
+
+impl DmxSerialReader for SerialPortReader {
+    fn read_timed(&mut self) -> Result<Vec<TimedByte>, String> {
+        // A one-byte read returns as soon as a byte is available, which is what lets the gap
+        // measurement follow the line rather than lag a whole buffer behind it.
+        self.port
+            .set_timeout(std::time::Duration::from_millis(10))
+            .map_err(|e| e.to_string())?;
+        let mut buffer = [0u8; 1];
+        match self.port.read(&mut buffer) {
+            Ok(0) => Ok(Vec::new()),
+            Ok(n) => {
+                let now = std::time::Instant::now();
+                let gap = now
+                    .saturating_duration_since(self.last_read)
+                    .as_micros()
+                    .min(u128::from(u32::MAX)) as u32;
+                self.last_read = now;
+                self.pending.extend(buffer[..n].iter().copied());
+                // Report only what has a measured gap behind it; a trailing byte would have to
+                // guess one.
+                if self.pending.len() < 2 {
+                    return Ok(Vec::new());
+                }
+                let first = self.pending.pop_front().expect("len checked");
+                let rest: Vec<TimedByte> = self
+                    .pending
+                    .drain(..)
+                    .map(|byte| TimedByte {
+                        byte,
+                        gap_micros: Self::SLOT_MICROS,
+                    })
+                    .collect();
+                let mut out = Vec::with_capacity(rest.len() + 1);
+                out.push(TimedByte {
+                    byte: first,
+                    gap_micros: gap,
+                });
+                out.extend(rest);
+                Ok(out)
+            }
+            // A read timeout means the line is idle between refreshes, which is not a failure.
+            Err(e) if e.kind() == std::io::ErrorKind::TimedOut => Ok(Vec::new()),
+            Err(e) => Err(e.to_string()),
+        }
+    }
 }
 
 struct SerialPortWriter {
@@ -459,7 +672,12 @@ mod tests {
         let frame = Dmx512Frame::blackout();
         assert_eq!(frame.payload().len(), DMX_CHANNELS);
         assert!(frame.payload().iter().all(|v| *v == 0));
-        assert_eq!(Dmx512Frame::from_slots(&[7u8; DMX_CHANNELS]).unwrap().payload()[0], 7);
+        assert_eq!(
+            Dmx512Frame::from_slots(&[7u8; DMX_CHANNELS])
+                .unwrap()
+                .payload()[0],
+            7
+        );
         assert!(
             Dmx512Frame::from_slots(&[0u8; 511]).is_none(),
             "511 slots is not a frame"
@@ -473,7 +691,11 @@ mod tests {
         assert!(frame.write(512, &[1]).is_err());
         assert!(frame.write(511, &[1]).is_ok());
         assert_eq!(frame.payload()[511], 1);
-        assert_eq!(frame.payload()[510], 0, "the rejected write changed nothing");
+        assert_eq!(
+            frame.payload()[510],
+            0,
+            "the rejected write changed nothing"
+        );
     }
 
     #[test]
@@ -620,7 +842,10 @@ mod tests {
         );
 
         assert!(
-            matches!(ep.send(&channels(1, 0, vec![9])), Err(EndpointError::Unreachable(_))),
+            matches!(
+                ep.send(&channels(1, 0, vec![9])),
+                Err(EndpointError::Unreachable(_))
+            ),
             "the first write fails"
         );
         assert_eq!(opens.load(Ordering::SeqCst), 1);
@@ -640,8 +865,16 @@ mod tests {
             1,
             "only the successful send reached the wire"
         );
-        assert_eq!(port.frames()[0][0], 9, "and it carried the value that was asked for");
-        assert_eq!(ep.frame().payload()[0], 9, "now the universe reflects what was sent");
+        assert_eq!(
+            port.frames()[0][0],
+            9,
+            "and it carried the value that was asked for"
+        );
+        assert_eq!(
+            ep.frame().payload()[0],
+            9,
+            "now the universe reflects what was sent"
+        );
     }
 
     #[test]
@@ -680,6 +913,231 @@ mod tests {
         assert!(matches!(log[0], Step::Break(_)), "break first: {log:?}");
         assert!(matches!(log[1], Step::Slots(_)), "slots second: {log:?}");
     }
-
 }
 
+#[cfg(test)]
+mod input_tests {
+    use super::*;
+
+    /// The gap between two consecutive slot bytes at 250 kbaud: 4 us per bit, 11 bits.
+    const SLOT: u32 = 44;
+
+    /// The gap before a start code: a mark after the break.
+    const MARK: u32 = MARK_MICROS;
+
+    /// One whole frame as timed bytes: a break, a start code, then 512 slots.
+    ///
+    /// A break is not a byte on the wire, only a length of idle, so it is modelled as the gap
+    /// reported ahead of the start code. That start code is then a real byte the assembler must
+    /// consume and discard, which is why the frame carries 514 timed bytes for 512 slots.
+    fn frame(slots: &[u8]) -> Vec<TimedByte> {
+        assert_eq!(slots.len(), DMX_CHANNELS, "a frame is 512 slots");
+        let mut bytes = vec![TimedByte {
+            // The break: a long idle gap, then the byte that follows it is the start code.
+            byte: 0x00,
+            gap_micros: BREAK_MICROS,
+        }];
+        for slot in slots {
+            bytes.push(TimedByte {
+                byte: *slot,
+                gap_micros: SLOT,
+            });
+        }
+        bytes
+    }
+
+    fn slots_with(changes: &[(usize, u8)]) -> Vec<u8> {
+        let mut slots = vec![0u8; DMX_CHANNELS];
+        for (channel, value) in changes {
+            slots[*channel] = *value;
+        }
+        slots
+    }
+
+    #[test]
+    fn a_whole_frame_is_reassembled_exactly() {
+        let slots = slots_with(&[(0, 255), (1, 128), (511, 7)]);
+        let bytes = frame(&slots);
+        let mut assembler = Dmx512Assembler::new();
+        let frames = assembler.push_all(&bytes);
+        assert_eq!(frames.len(), 1);
+        assert_eq!(frames[0].payload(), &slots[..]);
+        assert_eq!(assembler.dropped_frames(), 0);
+    }
+
+    #[test]
+    fn a_start_code_is_not_mistaken_for_a_slot() {
+        // Slot 0 must read 0, not the 0x00 start code that preceded it.
+        let slots = slots_with(&[(0, 0), (1, 42)]);
+        let frames = Dmx512Assembler::new().push_all(&frame(&slots));
+        assert_eq!(frames[0].payload()[0], 0);
+        assert_eq!(frames[0].payload()[1], 42);
+    }
+
+    #[test]
+    fn back_to_back_frames_are_separated_by_their_breaks() {
+        let first = slots_with(&[(0, 1)]);
+        let second = slots_with(&[(0, 2), (5, 9)]);
+        let mut bytes = frame(&first);
+        bytes.extend(frame(&second));
+        let frames = Dmx512Assembler::new().push_all(&bytes);
+        assert_eq!(frames.len(), 2);
+        assert_eq!(frames[0].payload()[0], 1);
+        assert_eq!(frames[1].payload()[0], 2);
+        assert_eq!(frames[1].payload()[5], 9);
+    }
+
+    #[test]
+    fn a_partial_frame_is_never_reported_as_complete() {
+        let slots = slots_with(&[(0, 200)]);
+        let mut bytes = frame(&slots);
+        bytes.truncate(bytes.len() - 100);
+        let mut assembler = Dmx512Assembler::new();
+        assert!(
+            assembler.push_all(&bytes).is_empty(),
+            "a frame missing slots must not be delivered"
+        );
+    }
+
+    #[test]
+    fn a_recovered_line_resyncs_on_the_next_break() {
+        let mut assembler = Dmx512Assembler::new();
+        let mut truncated = frame(&slots_with(&[(0, 1)]));
+        truncated.truncate(truncated.len() - 50);
+        assembler.push_all(&truncated);
+        assert!(assembler.push_all(&truncated).is_empty());
+
+        // The next complete frame after a desync still arrives intact.
+        let good = frame(&slots_with(&[(0, 99)]));
+        let frames = assembler.push_all(&good);
+        assert_eq!(frames.len(), 1);
+        assert_eq!(frames[0].payload()[0], 99);
+    }
+
+    #[test]
+    fn idle_line_noise_outside_a_frame_is_dropped_and_counted() {
+        let mut assembler = Dmx512Assembler::new();
+        let noise: Vec<TimedByte> = (0..10)
+            .map(|i| TimedByte {
+                byte: i,
+                gap_micros: SLOT,
+            })
+            .collect();
+        assert!(assembler.push_all(&noise).is_empty());
+        assert_eq!(assembler.dropped_bytes(), 10);
+        assert_eq!(assembler.dropped_frames(), 0);
+    }
+
+    #[test]
+    fn a_break_arriving_mid_frame_discards_the_partial_slots() {
+        let mut assembler = Dmx512Assembler::new();
+        // A frame opens but stops after a handful of slots, then the next break arrives.
+        let mut truncated = frame(&slots_with(&[(0, 1)]));
+        truncated.truncate(20);
+        assembler.push_all(&truncated);
+        assert_eq!(
+            assembler.dropped_frames(),
+            0,
+            "not yet known to be truncated"
+        );
+
+        assembler.push_all(&frame(&slots_with(&[(0, 2)])));
+        assert_eq!(
+            assembler.dropped_frames(),
+            1,
+            "the break revealed the previous frame was cut short"
+        );
+    }
+
+    #[test]
+    fn an_undersized_break_does_not_start_a_frame() {
+        let mut assembler = Dmx512Assembler::new();
+        let mut bytes = Vec::new();
+        for i in 0..DMX_CHANNELS + 8 {
+            bytes.push(TimedByte {
+                byte: i as u8,
+                // One microsecond short of a break.
+                gap_micros: BREAK_MICROS - 1,
+            });
+        }
+        assert!(assembler.push_all(&bytes).is_empty());
+        assert_eq!(assembler.dropped_bytes(), (DMX_CHANNELS + 8) as u64);
+    }
+
+    #[test]
+    fn a_realistic_refresh_stream_yields_one_frame_per_break() {
+        // A console refreshing at ~40 Hz for four frames, with per-slot timing throughout.
+        let mut bytes = Vec::new();
+        for level in 1..=4u8 {
+            bytes.push(TimedByte {
+                byte: 0,
+                gap_micros: BREAK_MICROS + 100,
+            });
+            let slots = slots_with(&[(0, level * 10), (100, level)]);
+            for slot in slots {
+                bytes.push(TimedByte {
+                    byte: slot,
+                    gap_micros: if bytes.len() % 2 == 0 { MARK } else { SLOT },
+                });
+            }
+        }
+        let frames = Dmx512Assembler::new().push_all(&bytes);
+        assert_eq!(frames.len(), 4);
+        for (i, f) in frames.iter().enumerate() {
+            let level = i as u8 + 1;
+            assert_eq!(f.payload()[0], level * 10);
+            assert_eq!(f.payload()[100], level);
+        }
+    }
+
+    #[test]
+    fn a_fake_reader_drives_the_assembler_through_its_trait() {
+        /// Hands out one scripted batch of timed bytes, then nothing.
+        struct FakeReader {
+            batches: std::collections::VecDeque<Vec<TimedByte>>,
+        }
+
+        impl DmxSerialReader for FakeReader {
+            fn read_timed(&mut self) -> Result<Vec<TimedByte>, String> {
+                Ok(self.batches.pop_front().unwrap_or_default())
+            }
+        }
+
+        let slots = slots_with(&[(3, 77)]);
+        let mut reader = FakeReader {
+            batches: std::collections::VecDeque::from(vec![
+                // The frame arrives split across two reads, as a real port would deliver it.
+                frame(&slots)[..100].to_vec(),
+                frame(&slots)[100..].to_vec(),
+            ]),
+        };
+        let mut assembler = Dmx512Assembler::new();
+        let mut frames = Vec::new();
+        for _ in 0..4 {
+            let bytes = reader.read_timed().unwrap();
+            frames.extend(assembler.push_all(&bytes));
+        }
+        assert_eq!(
+            frames.len(),
+            1,
+            "a frame split across reads still completes"
+        );
+        assert_eq!(frames[0].payload()[3], 77);
+    }
+
+    #[test]
+    fn opening_a_nonexistent_port_is_an_error_not_a_panic() {
+        assert!(open_reader("definitely-not-a-real-com-port-xyz", 50).is_err());
+        assert!(open_reader("", 50).is_err());
+    }
+
+    #[test]
+    fn a_reader_opener_opens_independently_each_call() {
+        let opener = reader_opener("definitely-not-a-real-com-port-xyz".into(), 50);
+        assert!(opener().is_err());
+        assert!(
+            opener().is_err(),
+            "a second call retries rather than panics"
+        );
+    }
+}
