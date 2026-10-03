@@ -226,9 +226,14 @@ mod tests {
         assert_eq!(outcome, Outcome::CleanExit);
         let events = events.into_inner().unwrap();
         assert!(events.contains(&WatchdogEvent::Exited { code: Some(7) }));
-        assert!(events.iter().any(|e| matches!(e, WatchdogEvent::Restarting { .. })));
+        assert!(events
+            .iter()
+            .any(|e| matches!(e, WatchdogEvent::Restarting { .. })));
         assert_eq!(
-            events.iter().filter(|e| matches!(e, WatchdogEvent::Started { .. })).count(),
+            events
+                .iter()
+                .filter(|e| matches!(e, WatchdogEvent::Started { .. }))
+                .count(),
             2
         );
     }
@@ -265,7 +270,13 @@ mod tests {
             &stop,
             |_| {},
         );
-        assert!(matches!(outcome, Outcome::GaveUp { last_code: None, .. }));
+        assert!(matches!(
+            outcome,
+            Outcome::GaveUp {
+                last_code: None,
+                ..
+            }
+        ));
     }
 
     #[test]

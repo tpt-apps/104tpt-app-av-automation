@@ -15,21 +15,17 @@ use crate::trigger::Trigger;
 /// ordering is total and reproducible across runs and platforms.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum Priority {
     /// Runs before normal rules.
     Critical,
     /// The default priority.
+    #[default]
     Normal,
     /// Runs after normal rules; never overrides a critical/normal rule for the same endpoint.
     Low,
     /// Informational only.
     Informational,
-}
-
-impl Default for Priority {
-    fn default() -> Self {
-        Priority::Normal
-    }
 }
 
 impl fmt::Display for Priority {
@@ -47,6 +43,7 @@ impl fmt::Display for Priority {
 /// Chain-level behaviour (spec §6.4).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[derive(Default)]
 pub struct Policy {
     /// What to do when an action step fails.
     #[serde(default)]
@@ -57,16 +54,6 @@ pub struct Policy {
     /// Overall wall-clock budget for the chain, in milliseconds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timeout_ms: Option<u64>,
-}
-
-impl Default for Policy {
-    fn default() -> Self {
-        Self {
-            on_failure: FailurePolicy::default(),
-            fallback: Vec::new(),
-            timeout_ms: None,
-        }
-    }
 }
 
 impl Policy {

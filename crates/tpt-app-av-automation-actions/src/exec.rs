@@ -39,7 +39,12 @@ impl ExecPolicy {
 }
 
 /// Runs `program` under `policy`, bounded by `timeout_ms`.
-pub(crate) fn run(policy: &ExecPolicy, program: &str, args: &[String], timeout_ms: u64) -> ActionOutcome {
+pub(crate) fn run(
+    policy: &ExecPolicy,
+    program: &str,
+    args: &[String],
+    timeout_ms: u64,
+) -> ActionOutcome {
     if !policy.enabled {
         return ActionOutcome::Failed {
             reason: "external program execution is disabled".into(),
@@ -81,7 +86,9 @@ pub(crate) fn run(policy: &ExecPolicy, program: &str, args: &[String], timeout_m
                 if Instant::now() >= deadline {
                     let _ = child.kill();
                     let _ = child.wait();
-                    return ActionOutcome::TimedOut { after_ms: timeout_ms };
+                    return ActionOutcome::TimedOut {
+                        after_ms: timeout_ms,
+                    };
                 }
                 std::thread::sleep(Duration::from_millis(10));
             }
@@ -127,7 +134,10 @@ mod tests {
     #[test]
     fn allowed_program_success_and_failure_exit_codes() {
         let policy = ExecPolicy::allowing([SHELL]);
-        assert_eq!(run(&policy, SHELL, &shell_args("exit 0"), 5000), ActionOutcome::Success);
+        assert_eq!(
+            run(&policy, SHELL, &shell_args("exit 0"), 5000),
+            ActionOutcome::Success
+        );
         assert!(matches!(
             run(&policy, SHELL, &shell_args("exit 3"), 5000),
             ActionOutcome::Failed { reason } if reason.contains("status 3")

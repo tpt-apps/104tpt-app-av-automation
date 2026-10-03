@@ -21,6 +21,9 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+mod latency;
+
+pub use latency::{LatencySamples, Percentiles};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use tpt_app_av_automation_actions::{Actions, MemorySink, NullSleeper};
@@ -118,8 +121,8 @@ impl Replay {
         let devices = DeviceFile::from_path(dir.join("devices.yaml"))?;
         let script_text = std::fs::read_to_string(dir.join("script.yaml"))
             .map_err(|e| Error::Io(format!("{}: {e}", dir.join("script.yaml").display())))?;
-        let script: Script =
-            serde_yaml::from_str(&script_text).map_err(|e| Error::Parse(format!("script.yaml: {e}")))?;
+        let script: Script = serde_yaml::from_str(&script_text)
+            .map_err(|e| Error::Parse(format!("script.yaml: {e}")))?;
         Self::play(pack, &devices, &script)
     }
 
@@ -142,14 +145,21 @@ impl Replay {
             actions.bind_endpoint(device.id.clone(), Arc::new(endpoint.clone()));
             endpoints.insert(device.id.clone(), endpoint);
         }
-        let mut engine = Engine::new(pack, registry, actions, Arc::new(clock.clone()), EngineConfig::default())?;
+        let mut engine = Engine::new(
+            pack,
+            registry,
+            actions,
+            Arc::new(clock.clone()),
+            EngineConfig::default(),
+        )?;
 
         let mut records = Vec::new();
         for step in &script.steps {
             match step {
                 Step::SetTime(text) => {
                     let (time, day) = parse_local_time(text)?;
-                    let ms = u64::from(day) * 86_400_000 + u64::from(time.minutes_since_midnight()) * 60_000;
+                    let ms = u64::from(day) * 86_400_000
+                        + u64::from(time.minutes_since_midnight()) * 60_000;
                     clock.set(Timestamp::from_millis(REPLAY_START_MS + ms));
                 }
                 Step::AdvanceMs(ms) => clock.advance_millis(*ms),
@@ -204,9 +214,11 @@ fn parse_local_time(text: &str) -> Result<(LocalTime, u8)> {
         Some((t, d)) => (t, Some(d)),
         None => (text, None),
     };
-    let time: LocalTime = time
-        .parse()
-        .map_err(|_| Error::Parse(format!("invalid set_time `{text}`: expected HH:MM or HH:MM@day")))?;
+    let time: LocalTime = time.parse().map_err(|_| {
+        Error::Parse(format!(
+            "invalid set_time `{text}`: expected HH:MM or HH:MM@day"
+        ))
+    })?;
     let day = match day {
         Some(d) => Weekday::parse(d)
             .ok_or_else(|| Error::Parse(format!("invalid weekday in set_time `{text}`")))?
@@ -241,7 +253,8 @@ pub fn discover(group: &str) -> Vec<PathBuf> {
 /// With `UPDATE_GOLDEN=1` the expected file is rewritten instead. A missing expected file is a
 /// failure, so a fixture can never silently "pass" by having nothing to compare against.
 pub fn assert_golden(dir: &Path) {
-    let replay = Replay::run(dir).unwrap_or_else(|e| panic!("{}: replay failed: {e}", dir.display()));
+    let replay =
+        Replay::run(dir).unwrap_or_else(|e| panic!("{}: replay failed: {e}", dir.display()));
     let actual = replay.to_json();
     let expected_path = dir.join("expected.json");
     if std::env::var_os("UPDATE_GOLDEN").is_some() {

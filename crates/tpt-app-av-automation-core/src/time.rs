@@ -84,13 +84,19 @@ impl FixedClock {
 
     /// Advances the clock by `millis`.
     pub fn advance_millis(&self, millis: u64) {
-        let mut guard = self.now.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut guard = self
+            .now
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         *guard = guard.saturating_add_millis(millis);
     }
 
     /// Sets the clock to an absolute instant.
     pub fn set(&self, at: Timestamp) {
-        let mut guard = self.now.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut guard = self
+            .now
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         *guard = at;
     }
 }
@@ -103,7 +109,10 @@ impl Default for FixedClock {
 
 impl Clock for FixedClock {
     fn now(&self) -> Timestamp {
-        *self.now.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+        *self
+            .now
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 }
 

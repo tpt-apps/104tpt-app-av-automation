@@ -4,9 +4,7 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
 use tpt_app_av_automation_actions::{Actions, CancelToken, MemorySink, NullSleeper, Sleeper};
-use tpt_app_av_automation_core::{
-    DeviceHealth, DmxLevel, Event, FixedClock, MidiLevel, Timestamp,
-};
+use tpt_app_av_automation_core::{DeviceHealth, DmxLevel, Event, FixedClock, MidiLevel, Timestamp};
 use tpt_app_av_automation_devices::{Command, Device, DeviceRegistry, Faults, VirtualEndpoint};
 use tpt_app_av_automation_engine::{CancelHandle, Engine, EngineConfig, Mode};
 use tpt_app_av_automation_model::{
@@ -33,7 +31,12 @@ impl Sleeper for CancellingSleeper {
     }
 }
 
-fn harness_with(yaml: &str, devices: &[&str], sleeper: Arc<dyn Sleeper>, config: EngineConfig) -> Harness {
+fn harness_with(
+    yaml: &str,
+    devices: &[&str],
+    sleeper: Arc<dyn Sleeper>,
+    config: EngineConfig,
+) -> Harness {
     let pack = RulePack::from_yaml_str(yaml).expect("test pack must be valid");
     let clock = FixedClock::new(Timestamp::from_millis(T0));
     let sink = Arc::new(MemorySink::default());
@@ -59,7 +62,12 @@ fn harness_with(yaml: &str, devices: &[&str], sleeper: Arc<dyn Sleeper>, config:
 }
 
 fn harness(yaml: &str, devices: &[&str]) -> Harness {
-    harness_with(yaml, devices, Arc::new(NullSleeper), EngineConfig::default())
+    harness_with(
+        yaml,
+        devices,
+        Arc::new(NullSleeper),
+        EngineConfig::default(),
+    )
 }
 
 impl Harness {
@@ -106,7 +114,10 @@ fn armed_rule_sends_real_actions_and_explains_itself() {
     assert_eq!(r.trigger_type, "osc");
     assert_eq!(r.trigger_detail, osc("/go", &[]));
     assert_eq!(r.action_results.len(), 2);
-    assert_eq!(r.action_results[0].detail.as_deref(), Some("osc /power = 1 -> proj"));
+    assert_eq!(
+        r.action_results[0].detail.as_deref(),
+        Some("osc /power = 1 -> proj")
+    );
     assert_eq!(h.sent("proj").len(), 1);
     assert_eq!(h.sink.notices().len(), 1);
     assert_eq!(h.engine.history().count(), 1);
@@ -194,7 +205,11 @@ fn unmet_condition_skips_and_explains() {
     assert!(r.action_results.is_empty());
     assert_eq!(r.condition_results[0].result, ConditionResult::NotMet);
     assert!(!r.condition_results[0].permits);
-    assert!(r.condition_results[0].observed.as_ref().unwrap().contains("offline"));
+    assert!(r.condition_results[0]
+        .observed
+        .as_ref()
+        .unwrap()
+        .contains("offline"));
     assert!(h.sent("proj").is_empty());
 }
 
@@ -209,7 +224,10 @@ fn unknown_condition_blocks_unless_the_rule_opts_in() {
     assert_eq!(r.overall_status, ExecutionStatus::Skipped);
     assert!(r.blocked_by_unknown_condition());
 
-    let lenient = GATED.replace("equals: online }", "equals: online, fire_on_unknown: true }");
+    let lenient = GATED.replace(
+        "equals: online }",
+        "equals: online, fire_on_unknown: true }",
+    );
     let mut h = harness(&lenient, &["proj"]);
     h.engine
         .registry_mut()
@@ -317,11 +335,19 @@ rules:
     let mut h = harness(yaml, &["switcher"]);
     h.endpoints["switcher"].set_offline(true);
     let r = &h.engine.handle_event(Event::Manual { rule: None })[0];
-    let ids: Vec<_> = r.action_results.iter().map(|a| a.action_id.as_str()).collect();
+    let ids: Vec<_> = r
+        .action_results
+        .iter()
+        .map(|a| a.action_id.as_str())
+        .collect();
     assert_eq!(ids, ["switch", "after", "manual"]);
     assert!(matches!(outcomes(r)[1], ActionOutcome::Skipped { .. }));
     assert!(outcomes(r)[2].is_success());
-    assert_eq!(r.overall_status, ExecutionStatus::PartialFailure, "fallback success does not hide the failure");
+    assert_eq!(
+        r.overall_status,
+        ExecutionStatus::PartialFailure,
+        "fallback success does not hide the failure"
+    );
     assert_eq!(h.sink.notices().len(), 1);
 }
 
@@ -382,7 +408,11 @@ fn conflicting_rules_resolve_by_priority_and_are_recorded() {
     let mut h = harness(CONFLICT, &["proj"]);
     let records = h.engine.handle_event(osc("/go", &[]));
     let order: Vec<_> = records.iter().map(|r| r.rule_id.as_str()).collect();
-    assert_eq!(order, ["aa-critical", "bb-normal", "zz-low"], "critical first, then by id");
+    assert_eq!(
+        order,
+        ["aa-critical", "bb-normal", "zz-low"],
+        "critical first, then by id"
+    );
 
     let by = |id: &str| records.iter().find(|r| r.rule_id.as_str() == id).unwrap();
     assert!(outcomes(by("aa-critical"))[0].is_success());
@@ -394,12 +424,16 @@ fn conflicting_rules_resolve_by_priority_and_are_recorded() {
         other => panic!("expected conflict skip, got {other:?}"),
     }
     let sent = h.sent("proj");
-    assert!(!sent.iter().any(|c| matches!(c, Command::Osc { args, .. } if args == &vec![1.0])));
+    assert!(!sent
+        .iter()
+        .any(|c| matches!(c, Command::Osc { args, .. } if args == &vec![1.0])));
 }
 
 #[test]
 fn equal_priority_conflicts_are_resolved_deterministically_by_rule_id() {
-    let yaml = CONFLICT.replace("priority: low", "priority: normal").replace("priority: critical", "priority: normal");
+    let yaml = CONFLICT
+        .replace("priority: low", "priority: normal")
+        .replace("priority: critical", "priority: normal");
     let mut a = harness(&yaml, &["proj"]);
     let mut b = harness(&yaml, &["proj"]);
     let first = a.engine.handle_event(osc("/go", &[]));
@@ -432,8 +466,14 @@ rules:
 "#;
     let mut h = harness(yaml, &["proj"]);
     let records = h.engine.handle_event(osc("/go", &[]));
-    let live = records.iter().find(|r| r.rule_id.as_str() == "zz-live").unwrap();
-    assert!(outcomes(live)[0].is_success(), "live write not blocked by a simulated one");
+    let live = records
+        .iter()
+        .find(|r| r.rule_id.as_str() == "zz-live")
+        .unwrap();
+    assert!(
+        outcomes(live)[0].is_success(),
+        "live write not blocked by a simulated one"
+    );
     assert_eq!(h.sent("proj").len(), 1);
 }
 
@@ -462,15 +502,29 @@ rules:
     let summary: Vec<_> = r
         .action_results
         .iter()
-        .map(|a| (a.action_id.as_str(), a.outcome.is_success(), a.outcome.is_skipped()))
+        .map(|a| {
+            (
+                a.action_id.as_str(),
+                a.outcome.is_success(),
+                a.outcome.is_skipped(),
+            )
+        })
         .collect();
     assert_eq!(
         summary,
-        [("first", true, false), ("pause", true, false), ("second", false, true), ("third", false, true)]
+        [
+            ("first", true, false),
+            ("pause", true, false),
+            ("second", false, true),
+            ("third", false, true)
+        ]
     );
     assert_eq!(h.sent("proj").len(), 1, "second step must not run");
     assert!(h.sink.notices().is_empty());
-    assert!(h.engine.cancel_handle().active().is_empty(), "finished chains are deregistered");
+    assert!(
+        h.engine.cancel_handle().active().is_empty(),
+        "finished chains are deregistered"
+    );
 }
 
 #[test]
@@ -502,10 +556,17 @@ rules:
         ..Faults::default()
     });
     let records = h.engine.handle_event(Event::Manual { rule: None });
-    assert_eq!(records.len(), 2, "the degradation cascaded into a second rule");
+    assert_eq!(
+        records.len(),
+        2,
+        "the degradation cascaded into a second rule"
+    );
     assert_eq!(records[0].overall_status, ExecutionStatus::PartialFailure);
     assert_eq!(records[1].rule_id.as_str(), "on-degraded");
-    assert_eq!(h.engine.registry().health("proj"), Some(DeviceHealth::Degraded));
+    assert_eq!(
+        h.engine.registry().health("proj"),
+        Some(DeviceHealth::Degraded)
+    );
     assert_eq!(h.sink.notices()[0].message, "projector degraded");
 }
 
@@ -542,12 +603,18 @@ rules:
     let records = h.engine.tick();
     let rules: Vec<_> = records.iter().map(|r| r.rule_id.as_str()).collect();
     assert_eq!(rules, ["lost", "offline"]);
-    assert_eq!(h.engine.registry().health("proj"), Some(DeviceHealth::Offline));
+    assert_eq!(
+        h.engine.registry().health("proj"),
+        Some(DeviceHealth::Offline)
+    );
     // Nothing more until it recovers.
     h.clock.advance_millis(60_000);
     assert!(h.engine.tick().is_empty());
     assert!(h.engine.device_heartbeat("proj").unwrap().is_empty());
-    assert_eq!(h.engine.registry().health("proj"), Some(DeviceHealth::Online));
+    assert_eq!(
+        h.engine.registry().health("proj"),
+        Some(DeviceHealth::Online)
+    );
 }
 
 const SCHEDULED: &str = r#"
@@ -575,7 +642,12 @@ fn schedules_fire_on_tick_once_per_minute() {
     h.clock.advance_millis((18 * 60 + 54) * 60_000);
     assert!(h.engine.tick().is_empty());
     h.clock.advance_millis(60_000);
-    let fired: Vec<_> = h.engine.tick().iter().map(|r| r.rule_id.to_string()).collect();
+    let fired: Vec<_> = h
+        .engine
+        .tick()
+        .iter()
+        .map(|r| r.rule_id.to_string())
+        .collect();
     assert_eq!(fired.len(), 2);
     h.clock.advance_millis(20_000);
     assert!(h.engine.tick().is_empty(), "same minute");
@@ -590,13 +662,23 @@ fn one_shot_schedules_do_not_refire_after_a_restart() {
 
     // The process is killed and restarted within the same minute...
     let mut second = harness(SCHEDULED, &[]);
-    second.clock.advance_millis((18 * 60 + 55) * 60_000 + 30_000);
+    second
+        .clock
+        .advance_millis((18 * 60 + 55) * 60_000 + 30_000);
     second.engine.restore(serde_json::from_str(&saved).unwrap());
-    assert!(second.engine.tick().is_empty(), "no duplicate firing in the same minute");
+    assert!(
+        second.engine.tick().is_empty(),
+        "no duplicate firing in the same minute"
+    );
 
     // ...and the next day only the recurring rule fires.
     second.clock.advance_millis(86_400_000);
-    let next: Vec<_> = second.engine.tick().iter().map(|r| r.rule_id.to_string()).collect();
+    let next: Vec<_> = second
+        .engine
+        .tick()
+        .iter()
+        .map(|r| r.rule_id.to_string())
+        .collect();
     assert_eq!(next, ["nightly"]);
 }
 
@@ -683,7 +765,12 @@ fn run_rule_bypasses_the_trigger_and_unknown_rules_error() {
     let mut h = harness(SIMPLE_ARMED, &["proj"]);
     let records = h.engine.run_rule("go").unwrap();
     assert_eq!(records.len(), 1);
-    assert_eq!(records[0].trigger_detail, Event::Manual { rule: Some("go".into()) });
+    assert_eq!(
+        records[0].trigger_detail,
+        Event::Manual {
+            rule: Some("go".into())
+        }
+    );
     assert!(h.engine.run_rule("nope").is_err());
 }
 
@@ -711,9 +798,15 @@ rules:
     let records = h.engine.handle_event(Event::Manual { rule: None });
     let ids: Vec<_> = records.iter().map(|r| r.rule_id.as_str()).collect();
     assert_eq!(ids, ["child", "parent"], "child completes first");
-    assert!(records.iter().all(|r| r.overall_status == ExecutionStatus::Success));
+    assert!(records
+        .iter()
+        .all(|r| r.overall_status == ExecutionStatus::Success));
     assert_eq!(h.sent("proj").len(), 1);
-    assert!(records[1].action_results[0].detail.as_ref().unwrap().contains("child"));
+    assert!(records[1].action_results[0]
+        .detail
+        .as_ref()
+        .unwrap()
+        .contains("child"));
 }
 
 #[test]
@@ -789,7 +882,10 @@ rules:
         ..Faults::default()
     });
     let r = &h.engine.handle_event(Event::Manual { rule: None })[0];
-    assert!(matches!(outcomes(r)[0], ActionOutcome::TimedOut { after_ms: 30 }));
+    assert!(matches!(
+        outcomes(r)[0],
+        ActionOutcome::TimedOut { after_ms: 30 }
+    ));
     assert_eq!(r.overall_status, ExecutionStatus::Failed);
 }
 
@@ -828,17 +924,23 @@ rules:
 fn hot_reload_disarms_edited_and_new_rules_but_keeps_unchanged_ones() {
     let mut h = harness(SIMPLE_ARMED, &["proj"]);
     // Unchanged version: stays armed.
-    h.engine.load_pack(RulePack::from_yaml_str(SIMPLE_ARMED).unwrap()).unwrap();
+    h.engine
+        .load_pack(RulePack::from_yaml_str(SIMPLE_ARMED).unwrap())
+        .unwrap();
     assert!(h.engine.is_armed("go"));
     // Edited (version bump): comes up disarmed.
     let edited = SIMPLE_ARMED.replace("name: Go\n", "name: Go\n    version: 2\n");
-    h.engine.load_pack(RulePack::from_yaml_str(&edited).unwrap()).unwrap();
+    h.engine
+        .load_pack(RulePack::from_yaml_str(&edited).unwrap())
+        .unwrap();
     assert!(!h.engine.is_armed("go"));
     // A new rule declared armed in YAML is still disarmed on reload.
     let added = format!(
         "{edited}  - id: extra\n    name: Extra\n    armed: true\n    trigger: {{ type: manual }}\n    actions:\n      - {{ id: n, type: notify.operator, message: x }}\n"
     );
-    h.engine.load_pack(RulePack::from_yaml_str(&added).unwrap()).unwrap();
+    h.engine
+        .load_pack(RulePack::from_yaml_str(&added).unwrap())
+        .unwrap();
     assert!(!h.engine.is_armed("extra"));
 }
 
@@ -864,7 +966,10 @@ fn unresolved_devices_are_reported() {
     let diagnostics = h.engine.check_devices();
     assert_eq!(diagnostics.len(), 1);
     assert_eq!(diagnostics[0].location, "rules[0].actions[0].device");
-    assert!(harness(SIMPLE_ARMED, &["proj"]).engine.check_devices().is_empty());
+    assert!(harness(SIMPLE_ARMED, &["proj"])
+        .engine
+        .check_devices()
+        .is_empty());
 }
 
 #[test]
@@ -907,7 +1012,11 @@ rules:
     let mut h = harness_with(yaml, &["proj"], Arc::new(NullSleeper), config);
     h.endpoints["proj"].set_offline(true);
     let records = h.engine.handle_event(Event::Manual { rule: None });
-    assert_eq!(records.len(), 1, "the follow-up event was dropped at the cap");
+    assert_eq!(
+        records.len(),
+        1,
+        "the follow-up event was dropped at the cap"
+    );
 }
 
 #[test]
@@ -917,7 +1026,9 @@ fn scheduler_state_is_handed_to_the_hook_before_the_chain_runs() {
     let (seen, sink) = (observed.clone(), h.sink.clone());
     h.engine.set_state_hook(move |state| {
         // (one-shots recorded as fired, operator alerts raised so far)
-        seen.lock().unwrap().push((state.scheduler.fired_once.len(), sink.notices().len()));
+        seen.lock()
+            .unwrap()
+            .push((state.scheduler.fired_once.len(), sink.notices().len()));
     });
     h.clock.advance_millis((18 * 60 + 55) * 60_000);
     assert_eq!(h.engine.tick().len(), 2);

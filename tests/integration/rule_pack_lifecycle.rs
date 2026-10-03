@@ -5,8 +5,7 @@
 //! the real binary in a real process against real files.
 
 use tpt_app_av_automation_scenarios::{
-    cli, code, stderr, stdout, wait_until, TempDir, EXIT_CONFIG, EXIT_OK, EXIT_SKIPPED,
-    PATIENCE,
+    cli, code, stderr, stdout, wait_until, TempDir, EXIT_CONFIG, EXIT_OK, EXIT_SKIPPED, PATIENCE,
 };
 
 const PACK: &str = r#"
@@ -250,7 +249,11 @@ fn the_help_text_documents_every_command() {
 fn bad_invocations_are_refused_rather_than_silently_succeeding() {
     assert_ne!(code(&cli(&["definitely-not-a-command"])), EXIT_OK);
     assert_ne!(code(&cli(&["run"])), EXIT_OK, "run requires --rules");
-    assert_ne!(code(&cli(&["validate"])), EXIT_OK, "validate requires --rules");
+    assert_ne!(
+        code(&cli(&["validate"])),
+        EXIT_OK,
+        "validate requires --rules"
+    );
 }
 
 #[test]
@@ -285,4 +288,3 @@ fn validation_is_fast_enough_to_run_in_a_pre_show_check() {
         start.elapsed()
     );
 }
-

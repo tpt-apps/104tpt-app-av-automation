@@ -15,9 +15,7 @@
 use std::collections::HashMap;
 
 use tpt_app_av_automation_core::{DeviceHealth, DmxLevel, Error, Event, MidiLevel, Result};
-use tpt_app_av_automation_model::{
-    LocalTime, MidiMessageKind, RulePack, TriggerSpec, Weekday,
-};
+use tpt_app_av_automation_model::{LocalTime, MidiMessageKind, RulePack, TriggerSpec, Weekday};
 
 /// One-line usage summary, appended to parse errors.
 pub const USAGE: &str = "expected one of: schedule:HH:MM[@day], osc:/address[=v1,v2], \
@@ -82,7 +80,8 @@ pub fn parse_event(spec: &str, pack: &RulePack) -> Result<Vec<Event>> {
     let (kind, rest) = spec.split_once(':').unwrap_or((spec, ""));
     match kind {
         "schedule" => {
-            let at = schedule_time(spec).ok_or_else(|| bad(spec, "expected schedule:HH:MM[@day]"))?;
+            let at =
+                schedule_time(spec).ok_or_else(|| bad(spec, "expected schedule:HH:MM[@day]"))?;
             let minutes = at.time.minutes_since_midnight();
             let mut events: Vec<Event> = Vec::new();
             for rule in &pack.rules {
@@ -119,7 +118,10 @@ pub fn parse_event(spec: &str, pack: &RulePack) -> Result<Vec<Event>> {
         "midi" => {
             let parts: Vec<&str> = rest.split(':').collect();
             if !(3..=5).contains(&parts.len()) {
-                return Err(bad(spec, "expected midi:kind:channel:number[:value][:group]"));
+                return Err(bad(
+                    spec,
+                    "expected midi:kind:channel:number[:value][:group]",
+                ));
             }
             let kind = midi_kind(spec, parts[0])?;
             let message_number = number::<u8>(spec, parts[2], "number")?;
@@ -167,7 +169,12 @@ pub fn parse_event(spec: &str, pack: &RulePack) -> Result<Vec<Event>> {
                 "degraded" => DeviceHealth::Degraded,
                 "offline" => DeviceHealth::Offline,
                 "unknown" => DeviceHealth::Unknown,
-                _ => return Err(bad(spec, "state must be online, degraded, offline or unknown")),
+                _ => {
+                    return Err(bad(
+                        spec,
+                        "state must be online, degraded, offline or unknown",
+                    ))
+                }
             };
             Ok(vec![Event::DeviceState {
                 device: device.to_owned(),
@@ -253,9 +260,20 @@ rules:
                 spec: "mon,tue 18:55".into()
             }]
         );
-        assert_eq!(parse("schedule:07:00").unwrap(), vec![Event::Schedule { spec: "07:00".into() }]);
-        assert!(parse("schedule:12:00").unwrap().is_empty(), "nothing is due");
-        assert!(parse("schedule:18:55@wed").unwrap().is_empty(), "wrong weekday");
+        assert_eq!(
+            parse("schedule:07:00").unwrap(),
+            vec![Event::Schedule {
+                spec: "07:00".into()
+            }]
+        );
+        assert!(
+            parse("schedule:12:00").unwrap().is_empty(),
+            "nothing is due"
+        );
+        assert!(
+            parse("schedule:18:55@wed").unwrap().is_empty(),
+            "wrong weekday"
+        );
         assert_eq!(parse("schedule:18:55@tue").unwrap().len(), 1);
     }
 
@@ -308,7 +326,10 @@ rules:
     fn device_and_manual_events() {
         assert!(matches!(
             parse("device:proj:offline").unwrap()[0],
-            Event::DeviceState { current: DeviceHealth::Offline, .. }
+            Event::DeviceState {
+                current: DeviceHealth::Offline,
+                ..
+            }
         ));
         assert_eq!(
             parse("heartbeat-missed:proj:6000").unwrap(),
@@ -387,7 +408,9 @@ rules:
             })]
         );
         assert!(parse("midi:bogus:0:1:2").is_err());
-        assert!(parse("midi:cc:0:1:2:99").is_ok(), "group is not range-checked here");
+        assert!(
+            parse("midi:cc:0:1:2:99").is_ok(),
+            "group is not range-checked here"
+        );
     }
 }
-

@@ -229,7 +229,9 @@ mod tests {
     #[test]
     fn every_event_variant_round_trips_through_json() {
         let events = vec![
-            Event::Schedule { spec: "18:55".into() },
+            Event::Schedule {
+                spec: "18:55".into(),
+            },
             Event::Osc {
                 address: "/a".into(),
                 args: vec![1.0, 2.5],
@@ -271,7 +273,11 @@ mod tests {
         ];
         for event in events {
             let json = serde_json::to_string(&event).unwrap();
-            assert_eq!(json.matches("\"kind\"").count(), 1, "duplicate kind key in {json}");
+            assert_eq!(
+                json.matches("\"kind\"").count(),
+                1,
+                "duplicate kind key in {json}"
+            );
             let back: Event = serde_json::from_str(&json).unwrap_or_else(|e| panic!("{json}: {e}"));
             assert_eq!(back, event);
         }

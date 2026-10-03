@@ -126,7 +126,10 @@ mod tests {
 
     #[test]
     fn slug_is_stable_and_url_safe() {
-        assert_eq!(slugify_rule_id("Main Hall - Event Start"), "main-hall-event-start");
+        assert_eq!(
+            slugify_rule_id("Main Hall - Event Start"),
+            "main-hall-event-start"
+        );
         assert_eq!(slugify_rule_id("  Spaced   Out  "), "spaced-out");
         assert_eq!(slugify_rule_id("!!!"), "");
         assert_eq!(slugify_rule_id("DMX Scene Recall"), "dmx-scene-recall");

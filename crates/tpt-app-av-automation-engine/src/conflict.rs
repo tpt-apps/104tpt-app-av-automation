@@ -138,8 +138,11 @@ mod tests {
     #[test]
     fn different_values_to_the_same_address_conflict() {
         let mut c = Claims::default();
-        c.claim("d", "a", "critical", &osc("/x", 1.0), false).unwrap();
-        let err = c.claim("d", "b", "normal", &osc("/x", 2.0), false).unwrap_err();
+        c.claim("d", "a", "critical", &osc("/x", 1.0), false)
+            .unwrap();
+        let err = c
+            .claim("d", "b", "normal", &osc("/x", 2.0), false)
+            .unwrap_err();
         assert!(err.contains("rule `a`"));
     }
 
@@ -149,7 +152,8 @@ mod tests {
         c.claim("d", "a", "normal", &osc("/x", 1.0), false).unwrap();
         c.claim("d", "b", "normal", &osc("/x", 1.0), false).unwrap();
         c.claim("d", "b", "normal", &osc("/y", 9.0), false).unwrap();
-        c.claim("other", "b", "normal", &osc("/x", 9.0), false).unwrap();
+        c.claim("other", "b", "normal", &osc("/x", 9.0), false)
+            .unwrap();
     }
 
     #[test]
@@ -162,9 +166,13 @@ mod tests {
     #[test]
     fn dmx_ranges_conflict_only_when_they_overlap() {
         let mut c = Claims::default();
-        c.claim("d", "a", "normal", &dmx(0, vec![1, 2, 3]), false).unwrap();
-        c.claim("d", "b", "normal", &dmx(3, vec![9]), false).unwrap();
-        assert!(c.claim("d", "b", "normal", &dmx(2, vec![9]), false).is_err());
+        c.claim("d", "a", "normal", &dmx(0, vec![1, 2, 3]), false)
+            .unwrap();
+        c.claim("d", "b", "normal", &dmx(3, vec![9]), false)
+            .unwrap();
+        assert!(c
+            .claim("d", "b", "normal", &dmx(2, vec![9]), false)
+            .is_err());
     }
 
     #[test]
@@ -181,14 +189,20 @@ mod tests {
             false,
         )
         .unwrap();
-        assert!(c.claim("d", "b", "normal", &dmx(0, vec![1]), false).is_err());
+        assert!(c
+            .claim("d", "b", "normal", &dmx(0, vec![1]), false)
+            .is_err());
     }
 
     #[test]
     fn disarmed_rules_do_not_block_live_ones_but_simulation_shows_the_conflict() {
         let mut c = Claims::default();
-        c.claim("d", "sim", "critical", &osc("/x", 1.0), true).unwrap();
-        c.claim("d", "live", "normal", &osc("/x", 2.0), false).unwrap();
-        assert!(c.claim("d", "sim2", "normal", &osc("/x", 3.0), true).is_err());
+        c.claim("d", "sim", "critical", &osc("/x", 1.0), true)
+            .unwrap();
+        c.claim("d", "live", "normal", &osc("/x", 2.0), false)
+            .unwrap();
+        assert!(c
+            .claim("d", "sim2", "normal", &osc("/x", 3.0), true)
+            .is_err());
     }
 }

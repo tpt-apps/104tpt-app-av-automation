@@ -35,21 +35,17 @@ pub enum MediaOperation {
 /// Severity attached to operator notifications and incident log entries.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum AlertSeverity {
     /// Informational only.
     Info,
     /// Something the operator should be aware of.
+    #[default]
     Normal,
     /// Something went wrong but the show continues.
     High,
     /// The show is at risk; immediate intervention needed.
     Critical,
-}
-
-impl Default for AlertSeverity {
-    fn default() -> Self {
-        AlertSeverity::Normal
-    }
 }
 
 impl AlertSeverity {
@@ -314,8 +310,10 @@ impl ActionSpec {
 /// What happens when an action step fails (spec §6.4).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum FailurePolicy {
     /// Abort the chain; remaining steps are recorded as skipped.
+    #[default]
     StopChain,
     /// Continue with the next step.
     ContinueChain,
@@ -323,11 +321,6 @@ pub enum FailurePolicy {
     RunFallback,
 }
 
-impl Default for FailurePolicy {
-    fn default() -> Self {
-        FailurePolicy::StopChain
-    }
-}
 impl FailurePolicy {
     /// The canonical label.
     pub fn as_str(&self) -> &'static str {

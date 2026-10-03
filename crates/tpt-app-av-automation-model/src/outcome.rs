@@ -302,9 +302,7 @@ mod tests {
     #[test]
     fn all_failed_is_failed() {
         let status = fold_all(&[
-            ActionOutcome::Failed {
-                reason: "a".into(),
-            },
+            ActionOutcome::Failed { reason: "a".into() },
             ActionOutcome::TimedOut { after_ms: 10 },
         ]);
         assert_eq!(status, ExecutionStatus::Failed);

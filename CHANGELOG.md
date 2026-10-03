@@ -43,6 +43,10 @@ released. The CLI exit-code contract (0–6) and the `format_version: 1` rule fo
 - Persistent incident log and `GET /incidents`.
 - Write-ahead scheduler state: one-shot schedules are at-most-once across a hard kill.
 - Golden rule-pack traces, chaos tests, mutation-based robustness tests and a throughput test.
+- Latency suite (`tests/latency.rs`) reporting percentiles rather than averages: engine dispatch against
+  a 20 ms cue budget, the dispatch curve from 5 to 500 rules, the cost of an unmatched event, and an
+  OSC datagram in → datagram out across two loopback sockets through the production inbound gate.
+  Measured figures and how to reproduce them are in `docs/reliability.md`.
 - Coverage-guided fuzz targets (`fuzz/`) for the rule-pack parser, inbound OSC/MIDI/Art-Net/sACN and the
   local API, run by CI on Linux with AddressSanitizer. Windows cannot run them: Rust ships no ASan
   runtime for `x86_64-pc-windows-msvc`.
@@ -51,6 +55,12 @@ released. The CLI exit-code contract (0–6) and the `format_version: 1` rule fo
 - Windows packaging script (static CRT) and a hardened systemd unit (Linux unvalidated).
 
 ### Fixed
+- The `misbehaving_peers` chaos scenarios (`tests/chaos/misbehaving_peers.rs`) could fail on a loaded
+  machine, including under `cargo test --workspace` where every scenario runs at once. They reserve
+  loopback ports, release them, then let the engine bind — and on a collision the engine exits, which
+  is correct behaviour but not the failure under test. The fixture waited out the full 20 s
+  `PATIENCE` and then failed the scenario, so a transient port race became a red build. It now
+  retries with fresh ports, as the integration suite already did.
 - The inbound rate limiter and the fixed clock recovered nothing from a poisoned lock, unlike every
   other shared-state lock in the workspace: 16 `.expect()` calls. Both sit on paths a panic anywhere
   in the process can poison, and `RateLimiter::try_acquire` runs for every inbound datagram, so a

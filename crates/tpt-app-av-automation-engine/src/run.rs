@@ -100,7 +100,12 @@ impl Engine {
         }
     }
 
-    fn dispatch(&mut self, event: &Event, out: &mut Vec<ExecutionRecord>, followups: &mut Vec<Event>) {
+    fn dispatch(
+        &mut self,
+        event: &Event,
+        out: &mut Vec<ExecutionRecord>,
+        followups: &mut Vec<Event>,
+    ) {
         let previous_dmx = self.ingest(event);
         let mut matched: Vec<Rule> = self
             .pack
@@ -137,8 +142,9 @@ impl Engine {
     fn execute_rule(&mut self, rule: &Rule, event: &Event, cx: &mut RunCx<'_>) -> ExecutionRecord {
         let execution_id = self.allocate_execution_id();
         let started = self.clock.now();
-        let simulated =
-            cx.simulated || self.config.mode == Mode::Simulation || !self.is_armed(rule.id.as_str());
+        let simulated = cx.simulated
+            || self.config.mode == Mode::Simulation
+            || !self.is_armed(rule.id.as_str());
 
         if cx.depth == 0 {
             self.cancel
@@ -197,7 +203,9 @@ impl Engine {
         let budget = rule.policy.timeout_ms;
         let started = Instant::now();
         let remaining = |started: &Instant| {
-            budget.map(|b| b.saturating_sub(u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX)))
+            budget.map(|b| {
+                b.saturating_sub(u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX))
+            })
         };
 
         let mut results: Vec<ActionResultRecord> = Vec::new();
@@ -208,7 +216,13 @@ impl Engine {
 
         for (i, step) in main.iter().enumerate() {
             if cx.token.is_cancelled() {
-                skip_rest(&main[i..], "cancelled by operator", &policy, simulated, &mut results);
+                skip_rest(
+                    &main[i..],
+                    "cancelled by operator",
+                    &policy,
+                    simulated,
+                    &mut results,
+                );
                 cancelled = true;
                 break;
             }
@@ -248,7 +262,13 @@ impl Engine {
             let fallback = &rule.policy.fallback;
             for (i, step) in fallback.iter().enumerate() {
                 if cx.token.is_cancelled() {
-                    skip_rest(&fallback[i..], "cancelled by operator", &policy, simulated, &mut results);
+                    skip_rest(
+                        &fallback[i..],
+                        "cancelled by operator",
+                        &policy,
+                        simulated,
+                        &mut results,
+                    );
                     break;
                 }
                 let record = self.run_step(
@@ -284,15 +304,17 @@ impl Engine {
         let started = self.clock.now();
         let policy = rule.policy.on_failure.clone();
         let device = step.target().map(str::to_owned);
-        let make = |action_type: &str, outcome: ActionOutcome, detail: Option<String>, ms: u64| ActionResultRecord {
-            action_id: step.id.clone(),
-            action_type: action_type.to_owned(),
-            device: device.clone(),
-            outcome,
-            duration_ms: ms,
-            simulated,
-            failure_policy: policy.clone(),
-            detail,
+        let make = |action_type: &str, outcome: ActionOutcome, detail: Option<String>, ms: u64| {
+            ActionResultRecord {
+                action_id: step.id.clone(),
+                action_type: action_type.to_owned(),
+                device: device.clone(),
+                outcome,
+                duration_ms: ms,
+                simulated,
+                failure_policy: policy.clone(),
+                detail,
+            }
         };
 
         let spec = match step.spec.resolve_library(&self.pack.action_library) {
@@ -418,7 +440,9 @@ impl Engine {
         let outcome = match record.overall_status {
             ExecutionStatus::Success => ActionOutcome::Success,
             ExecutionStatus::Skipped => ActionOutcome::Skipped {
-                reason: format!("invoked rule `{target}` did not run (conditions not met or no actions)"),
+                reason: format!(
+                    "invoked rule `{target}` did not run (conditions not met or no actions)"
+                ),
             },
             status => ActionOutcome::Failed {
                 reason: format!("invoked rule `{target}` finished with {status}"),

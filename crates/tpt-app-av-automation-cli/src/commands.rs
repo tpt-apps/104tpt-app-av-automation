@@ -6,14 +6,15 @@ use std::time::Duration;
 use serde_json::{json, Value};
 use tpt_app_av_automation_actions::Actions;
 use tpt_app_av_automation_core::{
-    Clock, DeviceHealth, Diagnostic, Error, Event, FixedClock, Result, Severity, SystemClock, Timestamp,
+    Clock, DeviceHealth, Diagnostic, Error, Event, FixedClock, Result, Severity, SystemClock,
+    Timestamp,
 };
 use tpt_app_av_automation_devices::{Device, DeviceFile, DeviceRegistry};
 use tpt_app_av_automation_engine::{Engine, EngineConfig, Mode};
-use tpt_app_av_automation_model::{has_errors, ExecutionRecord, ExecutionStatus, RulePack, Weekday};
-use tpt_app_av_automation_report::{
-    exit_code, machine_result, render_record, ExitCode, Filter,
+use tpt_app_av_automation_model::{
+    has_errors, ExecutionRecord, ExecutionStatus, RulePack, Weekday,
 };
+use tpt_app_av_automation_report::{exit_code, machine_result, render_record, ExitCode, Filter};
 use tpt_app_av_automation_service::{
     supervise, Outcome, Service, ServiceConfig, Store, WatchdogEvent, WatchdogPolicy,
 };
@@ -64,7 +65,10 @@ pub fn validate(args: &ValidateArgs) -> Result<ExitCode> {
         diagnostics.extend(ServiceConfig::from_path(path)?.validate());
     }
 
-    let errors = diagnostics.iter().filter(|d| d.severity == Severity::Error).count();
+    let errors = diagnostics
+        .iter()
+        .filter(|d| d.severity == Severity::Error)
+        .count();
     let warnings = diagnostics.len() - errors;
     match args.format {
         Format::Text => {
@@ -90,13 +94,22 @@ pub fn validate(args: &ValidateArgs) -> Result<ExitCode> {
             })
         ),
     }
-    Ok(if errors == 0 { ExitCode::Success } else { ExitCode::ConfigurationError })
+    Ok(if errors == 0 {
+        ExitCode::Success
+    } else {
+        ExitCode::ConfigurationError
+    })
 }
 
 fn unresolved_devices(pack: &RulePack, devices: &DeviceFile) -> Vec<Diagnostic> {
     let mut out = Vec::new();
     for (ri, rule) in pack.rules.iter().enumerate() {
-        for (si, step) in rule.actions.iter().chain(rule.policy.fallback.iter()).enumerate() {
+        for (si, step) in rule
+            .actions
+            .iter()
+            .chain(rule.policy.fallback.iter())
+            .enumerate()
+        {
             if let Some(target) = step.target() {
                 if !devices.devices.iter().any(|d| d.id == target) {
                     out.push(Diagnostic::error(
@@ -113,8 +126,11 @@ fn unresolved_devices(pack: &RulePack, devices: &DeviceFile) -> Vec<Diagnostic> 
 // --- simulate -----------------------------------------------------------------------------------
 
 fn parse_at(text: &str) -> Result<ScheduleAt> {
-    event_spec::schedule_time(&format!("schedule:{text}"))
-        .ok_or_else(|| Error::Parse(format!("invalid --at `{text}`: expected HH:MM or HH:MM@day")))
+    event_spec::schedule_time(&format!("schedule:{text}")).ok_or_else(|| {
+        Error::Parse(format!(
+            "invalid --at `{text}`: expected HH:MM or HH:MM@day"
+        ))
+    })
 }
 
 fn simulation_clock(at: Option<ScheduleAt>, utc_offset: i32) -> FixedClock {
@@ -190,7 +206,10 @@ pub fn simulate(args: &SimulateArgs) -> Result<ExitCode> {
     }
     let at = match &args.at {
         Some(text) => Some(parse_at(text)?),
-        None => args.events.iter().find_map(|s| event_spec::schedule_time(s)),
+        None => args
+            .events
+            .iter()
+            .find_map(|s| event_spec::schedule_time(s)),
     };
     let clock = simulation_clock(at, args.utc_offset);
     let config = EngineConfig {
@@ -200,14 +219,25 @@ pub fn simulate(args: &SimulateArgs) -> Result<ExitCode> {
     };
     // The actions dispatcher has no endpoints bound, and simulation never calls it: nothing in this
     // command can send a control message.
-    let mut engine = Engine::new(pack, registry, Actions::with_defaults(), Arc::new(clock), config)?;
+    let mut engine = Engine::new(
+        pack,
+        registry,
+        Actions::with_defaults(),
+        Arc::new(clock),
+        config,
+    )?;
 
     let mut records: Vec<ExecutionRecord> = Vec::new();
     for event in events {
         // A `device:` event carries no previous state of its own; fill it from the registry.
         let event = match event {
-            Event::DeviceState { device, current, .. } => Event::DeviceState {
-                previous: engine.registry().health(&device).unwrap_or(DeviceHealth::Unknown),
+            Event::DeviceState {
+                device, current, ..
+            } => Event::DeviceState {
+                previous: engine
+                    .registry()
+                    .health(&device)
+                    .unwrap_or(DeviceHealth::Unknown),
                 device,
                 current,
             },
@@ -314,7 +344,8 @@ fn init_tracing() {
 // --- watchdog -----------------------------------------------------------------------------------
 
 pub fn watchdog(args: &WatchdogArgs) -> Result<ExitCode> {
-    let exe = std::env::current_exe().map_err(|e| Error::Internal(format!("cannot locate this executable: {e}")))?;
+    let exe = std::env::current_exe()
+        .map_err(|e| Error::Internal(format!("cannot locate this executable: {e}")))?;
     let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let on_signal = stop.clone();
     ctrlc::set_handler(move || on_signal.store(true, std::sync::atomic::Ordering::SeqCst))
@@ -346,7 +377,10 @@ pub fn watchdog(args: &WatchdogArgs) -> Result<ExitCode> {
     );
     match outcome {
         Outcome::CleanExit | Outcome::Stopped => Ok(ExitCode::Success),
-        Outcome::GaveUp { restarts, last_code } => {
+        Outcome::GaveUp {
+            restarts,
+            last_code,
+        } => {
             eprintln!(
                 "watchdog: engine is crash-looping ({restarts} restarts in {}s, last status {last_code:?}); giving up",
                 args.window_secs
@@ -361,7 +395,10 @@ pub fn watchdog(args: &WatchdogArgs) -> Result<ExitCode> {
 pub fn history(args: &HistoryArgs) -> Result<ExitCode> {
     let db = args.state_dir.join("automation.db");
     if !db.exists() {
-        return Err(Error::Io(format!("{}: no state database found", db.display())));
+        return Err(Error::Io(format!(
+            "{}: no state database found",
+            db.display()
+        )));
     }
     let store = Store::open(&db)?;
     let status = args
@@ -388,10 +425,16 @@ pub fn history(args: &HistoryArgs) -> Result<ExitCode> {
                 println!("no executions recorded");
             }
             for record in &records {
-                println!("{}  {}  {}", record.triggered_at_ms, record.execution_id, record);
+                println!(
+                    "{}  {}  {}",
+                    record.triggered_at_ms, record.execution_id, record
+                );
             }
         }
-        Format::Json => println!("{}", Value::Array(records.iter().map(machine_result).collect())),
+        Format::Json => println!(
+            "{}",
+            Value::Array(records.iter().map(machine_result).collect())
+        ),
         Format::Trace => println!(
             "{}",
             serde_json::to_string_pretty(&records).map_err(|e| Error::Internal(e.to_string()))?

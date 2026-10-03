@@ -59,7 +59,11 @@ impl Diagnostic {
 
 impl fmt::Display for Diagnostic {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{} at {}: {}", self.severity, self.location, self.message)
+        write!(
+            f,
+            "{} at {}: {}",
+            self.severity, self.location, self.message
+        )
     }
 }
 
@@ -198,13 +202,11 @@ mod tests {
     #[test]
     fn configuration_errors_are_classified() {
         assert!(Error::Parse("bad yaml".into()).is_configuration());
-        assert!(
-            Error::NotFound {
-                kind: "device",
-                id: "d1".into()
-            }
-            .is_configuration()
-        );
+        assert!(Error::NotFound {
+            kind: "device",
+            id: "d1".into()
+        }
+        .is_configuration());
         assert!(!Error::Control("no route".into()).is_configuration());
         assert!(!Error::Internal("bug".into()).is_configuration());
     }

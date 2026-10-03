@@ -100,25 +100,37 @@ pub struct MemorySink {
 impl MemorySink {
     /// Alerts raised so far.
     pub fn notices(&self) -> Vec<Notice> {
-        self.notices.lock().unwrap_or_else(|e| e.into_inner()).clone()
+        self.notices
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 
     /// Incidents logged so far.
     pub fn incidents(&self) -> Vec<Incident> {
-        self.incidents.lock().unwrap_or_else(|e| e.into_inner()).clone()
+        self.incidents
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 }
 
 impl Notifier for MemorySink {
     fn notify(&self, notice: Notice) -> Result<(), String> {
-        self.notices.lock().unwrap_or_else(|e| e.into_inner()).push(notice);
+        self.notices
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(notice);
         Ok(())
     }
 }
 
 impl IncidentSink for MemorySink {
     fn record(&self, incident: Incident) -> Result<(), String> {
-        self.incidents.lock().unwrap_or_else(|e| e.into_inner()).push(incident);
+        self.incidents
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(incident);
         Ok(())
     }
 }

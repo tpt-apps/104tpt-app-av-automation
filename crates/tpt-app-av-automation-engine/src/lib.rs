@@ -23,7 +23,9 @@ use std::sync::{Arc, Mutex};
 
 use tpt_app_av_automation_actions::{Actions, CancelToken};
 use tpt_app_av_automation_conditions::EvaluationContext;
-use tpt_app_av_automation_core::{Clock, DeviceHealth, Diagnostic, Error, Event, Result, Timestamp};
+use tpt_app_av_automation_core::{
+    Clock, DeviceHealth, Diagnostic, Error, Event, Result, Timestamp,
+};
 use tpt_app_av_automation_devices::DeviceRegistry;
 use tpt_app_av_automation_model::{ExecutionRecord, Rule, RulePack};
 use tpt_app_av_automation_triggers::{LocalClock, Scheduler};
@@ -129,6 +131,12 @@ impl CancelHandle {
     }
 }
 
+/// A callback that receives the restart state before time-driven rules execute.
+///
+/// Named so the write-ahead hook is readable at its use sites instead of being spelled out as a
+/// nested `Option<Box<dyn FnMut(..) + Send>>` everywhere.
+type StateHook = Box<dyn FnMut(&EngineState) + Send>;
+
 /// The rule engine.
 pub struct Engine {
     pack: RulePack,
@@ -141,7 +149,7 @@ pub struct Engine {
     history: VecDeque<ExecutionRecord>,
     next_execution: u64,
     cancel: CancelHandle,
-    state_hook: Option<Box<dyn FnMut(&EngineState) + Send>>,
+    state_hook: Option<StateHook>,
 }
 
 impl Engine {
@@ -204,12 +212,7 @@ impl Engine {
                 .pack
                 .rule(rule.id.as_str())
                 .is_some_and(|old| old.version == rule.version);
-            let was_armed = unchanged
-                && self
-                    .armed
-                    .get(rule.id.as_str())
-                    .copied()
-                    .unwrap_or(false);
+            let was_armed = unchanged && self.armed.get(rule.id.as_str()).copied().unwrap_or(false);
             armed.insert(rule.id.as_str().to_owned(), was_armed);
         }
         let memory = self.scheduler.state().clone();
@@ -341,7 +344,12 @@ impl Engine {
                 .filter(|(_, armed)| **armed)
                 .map(|(id, _)| id.clone())
                 .collect(),
-            known_rules: self.pack.rules.iter().map(|r| r.id.as_str().to_owned()).collect(),
+            known_rules: self
+                .pack
+                .rules
+                .iter()
+                .map(|r| r.id.as_str().to_owned())
+                .collect(),
             rule_tags: rule.tags.clone(),
         }
     }

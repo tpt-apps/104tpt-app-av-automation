@@ -11,9 +11,9 @@ use tpt_app_av_automation_core::{Clock, FixedClock, SystemClock, Timestamp};
 use tpt_app_av_automation_devices::DeviceFile;
 use tpt_app_av_automation_model::RulePack;
 use tpt_app_av_automation_report::Filter;
-use tpt_app_av_automation_service::{Service, ServiceConfig, ServiceHandle, Store};
-use tpt_av_control_osc::{OscArg, OscMessage};
+use tpt_app_av_automation_service::{ApiConfig, Service, ServiceConfig, ServiceHandle, Store};
 use tpt_av_control_midi::{Midi2ChannelVoice, Midi2Message, Ump};
+use tpt_av_control_osc::{OscArg, OscMessage};
 
 const TOKEN: &str = "0123456789abcdef-test-token";
 const T0: u64 = 1_704_067_200_000; // Monday 2024-01-01 00:00 UTC
@@ -35,13 +35,16 @@ rules:
 const DEVICES: &str = "devices:\n  - { id: proj, protocol: virtual }\n";
 
 fn config() -> ServiceConfig {
-    let mut c = ServiceConfig::default();
-    c.tick_ms = 10;
-    c.heartbeat_interval_ms = 50;
-    c.api.enabled = true;
-    c.api.bind = "127.0.0.1:0".into();
-    c.api.token = Some(TOKEN.into());
-    c
+    ServiceConfig {
+        tick_ms: 10,
+        heartbeat_interval_ms: 50,
+        api: ApiConfig {
+            enabled: true,
+            bind: "127.0.0.1:0".to_string(),
+            token: Some(TOKEN.to_string()),
+        },
+        ..ServiceConfig::default()
+    }
 }
 
 struct Running {
@@ -53,7 +56,10 @@ impl Running {
     fn start(service: Service) -> Self {
         let handle = service.handle();
         let thread = std::thread::spawn(move || service.run().expect("service run"));
-        assert!(handle.wait_ready(Duration::from_secs(10)), "service did not become ready");
+        assert!(
+            handle.wait_ready(Duration::from_secs(10)),
+            "service did not become ready"
+        );
         Self {
             handle,
             thread: Some(thread),
@@ -78,7 +84,12 @@ impl Drop for Running {
     }
 }
 
-fn build(pack: &str, config: ServiceConfig, store: Option<Store>, clock: Arc<dyn Clock>) -> Service {
+fn build(
+    pack: &str,
+    config: ServiceConfig,
+    store: Option<Store>,
+    clock: Arc<dyn Clock>,
+) -> Service {
     Service::build(
         RulePack::from_yaml_str(pack).unwrap(),
         DeviceFile::from_yaml_str(DEVICES).unwrap(),
@@ -102,7 +113,9 @@ fn wait_until(what: &str, mut condition: impl FnMut() -> bool) {
 
 fn http(addr: SocketAddr, method: &str, path: &str, headers: &[(&str, &str)]) -> (u16, Value) {
     let mut stream = TcpStream::connect(addr).unwrap();
-    stream.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+    stream
+        .set_read_timeout(Some(Duration::from_secs(5)))
+        .unwrap();
     let mut request = format!("{method} {path} HTTP/1.1\r\nHost: 127.0.0.1\r\n");
     for (k, v) in headers {
         request.push_str(&format!("{k}: {v}\r\n"));
@@ -117,17 +130,23 @@ fn http(addr: SocketAddr, method: &str, path: &str, headers: &[(&str, &str)]) ->
 }
 
 fn authed(addr: SocketAddr, method: &str, path: &str) -> (u16, Value) {
-    http(addr, method, path, &[("Authorization", &format!("Bearer {TOKEN}"))])
+    http(
+        addr,
+        method,
+        path,
+        &[("Authorization", &format!("Bearer {TOKEN}"))],
+    )
 }
 
 #[test]
 fn health_reports_the_listener_threads_it_starts() {
     let mut c = config();
     let osc_port = free_udp_port();
-    c.listeners.push(tpt_app_av_automation_service::ListenerConfig {
-        protocol: "osc".into(),
-        bind: format!("127.0.0.1:{osc_port}"),
-    });
+    c.listeners
+        .push(tpt_app_av_automation_service::ListenerConfig {
+            protocol: "osc".into(),
+            bind: format!("127.0.0.1:{osc_port}"),
+        });
     let running = Running::start(build(PACK, c, None, Arc::new(SystemClock)));
     let addr = running.handle.api_addr().expect("api address");
 
@@ -144,7 +163,11 @@ fn osc_packet(address: &str, args: &[OscArg]) -> Vec<u8> {
 }
 
 fn free_udp_port() -> u16 {
-    UdpSocket::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port()
+    UdpSocket::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port()
 }
 
 #[test]
@@ -160,8 +183,21 @@ fn every_request_needs_the_token() {
     let running = Running::start(build(PACK, config(), None, Arc::new(SystemClock)));
     let addr = running.api();
     assert_eq!(http(addr, "GET", "/rules", &[]).0, 401);
-    assert_eq!(http(addr, "GET", "/rules", &[("Authorization", "Bearer wrong-token-value")]).0, 401);
-    assert_eq!(http(addr, "GET", "/rules", &[("Authorization", TOKEN)]).0, 401, "scheme is required");
+    assert_eq!(
+        http(
+            addr,
+            "GET",
+            "/rules",
+            &[("Authorization", "Bearer wrong-token-value")]
+        )
+        .0,
+        401
+    );
+    assert_eq!(
+        http(addr, "GET", "/rules", &[("Authorization", TOKEN)]).0,
+        401,
+        "scheme is required"
+    );
     for path in ["/health", "/rules", "/devices", "/executions"] {
         assert_eq!(authed(addr, "GET", path).0, 200, "{path}");
     }
@@ -177,7 +213,10 @@ fn foreign_hosts_and_origins_are_refused_even_with_a_valid_token() {
     let auth = format!("Bearer {TOKEN}");
     let mut stream = TcpStream::connect(addr).unwrap();
     stream
-        .write_all(format!("GET /rules HTTP/1.1\r\nHost: evil.example\r\nAuthorization: {auth}\r\n\r\n").as_bytes())
+        .write_all(
+            format!("GET /rules HTTP/1.1\r\nHost: evil.example\r\nAuthorization: {auth}\r\n\r\n")
+                .as_bytes(),
+        )
         .unwrap();
     let mut raw = String::new();
     stream.read_to_string(&mut raw).unwrap();
@@ -195,9 +234,16 @@ fn foreign_hosts_and_origins_are_refused_even_with_a_valid_token() {
 fn malformed_http_gets_an_error_not_a_crash() {
     let running = Running::start(build(PACK, config(), None, Arc::new(SystemClock)));
     let addr = running.api();
-    for garbage in [&b"\x00\x01\x02\r\n\r\n"[..], b"GET\r\n\r\n", b"POST / HTTP/1.1\r\nContent-Length: 99999999\r\n\r\n", &[0xff; 5000]] {
+    for garbage in [
+        &b"\x00\x01\x02\r\n\r\n"[..],
+        b"GET\r\n\r\n",
+        b"POST / HTTP/1.1\r\nContent-Length: 99999999\r\n\r\n",
+        &[0xff; 5000],
+    ] {
         let mut stream = TcpStream::connect(addr).unwrap();
-        stream.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
         let _ = stream.write_all(garbage);
         let mut raw = Vec::new();
         let _ = stream.read_to_end(&mut raw);
@@ -256,10 +302,18 @@ fn health_reports_mode_devices_and_rejected_traffic() {
 fn simulate_mode_services_never_run_live() {
     let mut c = config();
     c.simulate = true;
-    let running = Running::start(build(&PACK.replace("armed: false", "armed: true"), c, None, Arc::new(SystemClock)));
+    let running = Running::start(build(
+        &PACK.replace("armed: false", "armed: true"),
+        c,
+        None,
+        Arc::new(SystemClock),
+    ));
     let (_, run) = authed(running.api(), "POST", "/rules/show/run");
     assert_eq!(run["executions"][0]["simulated"], true);
-    assert_eq!(authed(running.api(), "GET", "/health").1["mode"], "simulation");
+    assert_eq!(
+        authed(running.api(), "GET", "/health").1["mode"],
+        "simulation"
+    );
 }
 
 #[test]
@@ -267,7 +321,9 @@ fn the_event_stream_delivers_executions_over_websocket() {
     let running = Running::start(build(PACK, config(), None, Arc::new(SystemClock)));
     let addr = running.api();
     let mut stream = TcpStream::connect(addr).unwrap();
-    stream.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+    stream
+        .set_read_timeout(Some(Duration::from_secs(5)))
+        .unwrap();
     stream
         .write_all(
             format!(
@@ -324,14 +380,24 @@ fn the_event_stream_delivers_executions_over_websocket() {
 fn an_inbound_osc_message_triggers_a_rule_end_to_end() {
     let port = free_udp_port();
     let mut c = config();
-    c.listeners.push(tpt_app_av_automation_service::ListenerConfig {
-        protocol: "osc".into(),
-        bind: format!("127.0.0.1:{port}"),
-    });
-    let running = Running::start(build(&PACK.replace("armed: false", "armed: true"), c, None, Arc::new(SystemClock)));
+    c.listeners
+        .push(tpt_app_av_automation_service::ListenerConfig {
+            protocol: "osc".into(),
+            bind: format!("127.0.0.1:{port}"),
+        });
+    let running = Running::start(build(
+        &PACK.replace("armed: false", "armed: true"),
+        c,
+        None,
+        Arc::new(SystemClock),
+    ));
     let sender = UdpSocket::bind("127.0.0.1:0").unwrap();
-    sender.send_to(&osc_packet("/go", &[OscArg::Int(1)]), ("127.0.0.1", port)).unwrap();
-    wait_until("the OSC message to fire the rule", || !running.handle.snapshot().recent.is_empty());
+    sender
+        .send_to(&osc_packet("/go", &[OscArg::Int(1)]), ("127.0.0.1", port))
+        .unwrap();
+    wait_until("the OSC message to fire the rule", || {
+        !running.handle.snapshot().recent.is_empty()
+    });
     let record = running.handle.snapshot().recent[0].clone();
     assert_eq!(record.rule_id.as_str(), "show");
     assert!(!record.simulated);
@@ -342,11 +408,17 @@ fn an_inbound_osc_message_triggers_a_rule_end_to_end() {
 fn malformed_inbound_traffic_cannot_crash_the_engine() {
     let port = free_udp_port();
     let mut c = config();
-    c.listeners.push(tpt_app_av_automation_service::ListenerConfig {
-        protocol: "osc".into(),
-        bind: format!("127.0.0.1:{port}"),
-    });
-    let running = Running::start(build(&PACK.replace("armed: false", "armed: true"), c, None, Arc::new(SystemClock)));
+    c.listeners
+        .push(tpt_app_av_automation_service::ListenerConfig {
+            protocol: "osc".into(),
+            bind: format!("127.0.0.1:{port}"),
+        });
+    let running = Running::start(build(
+        &PACK.replace("armed: false", "armed: true"),
+        c,
+        None,
+        Arc::new(SystemClock),
+    ));
     let sender = UdpSocket::bind("127.0.0.1:0").unwrap();
     let target = ("127.0.0.1", port);
     let junk: Vec<Vec<u8>> = vec![
@@ -360,7 +432,9 @@ fn malformed_inbound_traffic_cannot_crash_the_engine() {
     for packet in &junk {
         let _ = sender.send_to(packet, target);
     }
-    wait_until("garbage to be counted", || running.handle.rejected_counts().0 >= 4);
+    wait_until("garbage to be counted", || {
+        running.handle.rejected_counts().0 >= 4
+    });
     // The engine is alive and still reacts to a valid message afterwards.
     sender.send_to(&osc_packet("/go", &[]), target).unwrap();
     wait_until("a valid message to fire after the garbage", || {
@@ -373,17 +447,20 @@ fn malformed_inbound_traffic_cannot_crash_the_engine() {
 fn flooding_sources_are_rate_limited() {
     let port = free_udp_port();
     let mut c = config();
-    c.listeners.push(tpt_app_av_automation_service::ListenerConfig {
-        protocol: "osc".into(),
-        bind: format!("127.0.0.1:{port}"),
-    });
+    c.listeners
+        .push(tpt_app_av_automation_service::ListenerConfig {
+            protocol: "osc".into(),
+            bind: format!("127.0.0.1:{port}"),
+        });
     let running = Running::start(build(PACK, c, None, Arc::new(SystemClock)));
     let sender = UdpSocket::bind("127.0.0.1:0").unwrap();
     let packet = osc_packet("/flood", &[]);
     for _ in 0..3000 {
         let _ = sender.send_to(&packet, ("127.0.0.1", port));
     }
-    wait_until("the limiter to engage", || running.handle.rejected_counts().1 > 0);
+    wait_until("the limiter to engage", || {
+        running.handle.rejected_counts().1 > 0
+    });
 }
 
 #[test]
@@ -407,19 +484,38 @@ rules:
     c.api.enabled = false;
 
     clock.advance_millis((18 * 60 + 55) * 60_000);
-    let mut first = Running::start(build(pack, c.clone(), Some(Store::open(&db).unwrap()), Arc::new(clock.clone())));
-    wait_until("the one-shot to fire", || !first.handle.snapshot().recent.is_empty());
+    let mut first = Running::start(build(
+        pack,
+        c.clone(),
+        Some(Store::open(&db).unwrap()),
+        Arc::new(clock.clone()),
+    ));
+    wait_until("the one-shot to fire", || {
+        !first.handle.snapshot().recent.is_empty()
+    });
     first.stop(); // "crash": the process ends, state lives only in SQLite
 
     // A new process starts during the same minute...
     clock.advance_millis(20_000);
-    let mut second = Running::start(build(pack, c.clone(), Some(Store::open(&db).unwrap()), Arc::new(clock.clone())));
+    let mut second = Running::start(build(
+        pack,
+        c.clone(),
+        Some(Store::open(&db).unwrap()),
+        Arc::new(clock.clone()),
+    ));
     std::thread::sleep(Duration::from_millis(400));
-    assert!(second.handle.snapshot().recent.is_empty(), "the one-shot must not fire twice");
+    assert!(
+        second.handle.snapshot().recent.is_empty(),
+        "the one-shot must not fire twice"
+    );
     second.stop();
 
     let store = Store::open(&db).unwrap();
-    assert_eq!(store.executions(&Filter::default(), 10).unwrap().len(), 1, "exactly one execution was recorded");
+    assert_eq!(
+        store.executions(&Filter::default(), 10).unwrap().len(),
+        1,
+        "exactly one execution was recorded"
+    );
     drop(store);
     let _ = std::fs::remove_dir_all(dir);
 }
@@ -430,17 +526,39 @@ fn executions_and_pack_versions_are_persisted() {
     let db = dir.join("state.db");
     let mut c = config();
     c.api.enabled = false;
-    let mut running = Running::start(build(PACK, c, Some(Store::open(&db).unwrap()), Arc::new(SystemClock)));
-    running.handle.control(tpt_app_av_automation_service::ControlRequest::Run("show".into())).unwrap();
-    running.handle.control(tpt_app_av_automation_service::ControlRequest::Arm("show".into())).unwrap();
+    let mut running = Running::start(build(
+        PACK,
+        c,
+        Some(Store::open(&db).unwrap()),
+        Arc::new(SystemClock),
+    ));
+    running
+        .handle
+        .control(tpt_app_av_automation_service::ControlRequest::Run(
+            "show".into(),
+        ))
+        .unwrap();
+    running
+        .handle
+        .control(tpt_app_av_automation_service::ControlRequest::Arm(
+            "show".into(),
+        ))
+        .unwrap();
     running.stop();
 
     let store = Store::open(&db).unwrap();
     assert_eq!(store.executions(&Filter::default(), 10).unwrap().len(), 1);
     assert_eq!(store.pack_history().unwrap().len(), 1);
     assert_eq!(store.load_devices().unwrap().devices.len(), 1);
-    let state = store.load_state().unwrap().expect("engine state saved on shutdown");
-    assert_eq!(state.armed.get("show"), Some(&true), "arming survives a restart");
+    let state = store
+        .load_state()
+        .unwrap()
+        .expect("engine state saved on shutdown");
+    assert_eq!(
+        state.armed.get("show"),
+        Some(&true),
+        "arming survives a restart"
+    );
     assert_eq!(state.next_execution, 2);
     drop(store);
     let _ = std::fs::remove_dir_all(dir);
@@ -488,7 +606,9 @@ fn listener(protocol: &str, bind: String) -> tpt_app_av_automation_service::List
 #[test]
 fn incoming_dmx_over_artnet_triggers_an_outbound_osc_message() {
     let receiver = UdpSocket::bind("127.0.0.1:0").unwrap();
-    receiver.set_read_timeout(Some(Duration::from_millis(200))).unwrap();
+    receiver
+        .set_read_timeout(Some(Duration::from_millis(200)))
+        .unwrap();
     let device_port = receiver.local_addr().unwrap().port();
     let artnet_port = free_udp_port();
     let pack = r#"
@@ -505,10 +625,13 @@ rules:
 "#;
     let mut c = config();
     c.api.enabled = false;
-    c.listeners.push(listener("artnet", format!("127.0.0.1:{artnet_port}")));
+    c.listeners
+        .push(listener("artnet", format!("127.0.0.1:{artnet_port}")));
     let running = Running::start(build_with_devices(
         pack,
-        &format!("devices:\n  - {{ id: show, protocol: osc, address: '127.0.0.1:{device_port}' }}\n"),
+        &format!(
+            "devices:\n  - {{ id: show, protocol: osc, address: '127.0.0.1:{device_port}' }}\n"
+        ),
         c,
     ));
 
@@ -534,7 +657,9 @@ rules:
 #[test]
 fn an_inbound_osc_message_drives_an_outbound_artnet_universe() {
     let receiver = UdpSocket::bind("127.0.0.1:0").unwrap();
-    receiver.set_read_timeout(Some(Duration::from_millis(200))).unwrap();
+    receiver
+        .set_read_timeout(Some(Duration::from_millis(200)))
+        .unwrap();
     let node_port = receiver.local_addr().unwrap().port();
     let osc_port = free_udp_port();
     let pack = r#"
@@ -551,10 +676,13 @@ rules:
 "#;
     let mut c = config();
     c.api.enabled = false;
-    c.listeners.push(listener("osc", format!("127.0.0.1:{osc_port}")));
+    c.listeners
+        .push(listener("osc", format!("127.0.0.1:{osc_port}")));
     let running = Running::start(build_with_devices(
         pack,
-        &format!("devices:\n  - {{ id: node, protocol: artnet, address: '127.0.0.1:{node_port}' }}\n"),
+        &format!(
+            "devices:\n  - {{ id: node, protocol: artnet, address: '127.0.0.1:{node_port}' }}\n"
+        ),
         c,
     ));
 
@@ -582,10 +710,18 @@ rules:
 fn a_midi_listener_for_an_absent_port_does_not_stop_the_service() {
     let mut c = config();
     c.api.enabled = false;
-    c.listeners.push(listener("midi", "definitely-not-a-real-midi-port-xyz".into()));
+    c.listeners.push(listener(
+        "midi",
+        "definitely-not-a-real-midi-port-xyz".into(),
+    ));
     let mut running = Running::start(build(PACK, c, None, Arc::new(SystemClock)));
     std::thread::sleep(Duration::from_millis(300));
-    assert!(running.handle.control(tpt_app_av_automation_service::ControlRequest::Run("show".into())).is_ok());
+    assert!(running
+        .handle
+        .control(tpt_app_av_automation_service::ControlRequest::Run(
+            "show".into()
+        ))
+        .is_ok());
     running.stop();
 }
 
@@ -605,14 +741,16 @@ rules:
     actions:
       - { id: log, type: log.incident, severity: critical, message: "lamp failure" }
 "#;
-    let mut running = Running::start(Service::build(
-        RulePack::from_yaml_str(pack).unwrap(),
-        DeviceFile::default(),
-        config(),
-        Some(Store::open(&db).unwrap()),
-        Arc::new(SystemClock),
-    )
-    .unwrap());
+    let mut running = Running::start(
+        Service::build(
+            RulePack::from_yaml_str(pack).unwrap(),
+            DeviceFile::default(),
+            config(),
+            Some(Store::open(&db).unwrap()),
+            Arc::new(SystemClock),
+        )
+        .unwrap(),
+    );
     authed(running.api(), "POST", "/rules/alarm/run");
     let (status, body) = authed(running.api(), "GET", "/incidents");
     assert_eq!(status, 200);
@@ -652,10 +790,11 @@ rules:
 fn midi_2_ump_over_the_network_triggers_a_rule() {
     let port = free_udp_port();
     let mut c = config();
-    c.listeners.push(tpt_app_av_automation_service::ListenerConfig {
-        protocol: "ump".into(),
-        bind: format!("127.0.0.1:{port}"),
-    });
+    c.listeners
+        .push(tpt_app_av_automation_service::ListenerConfig {
+            protocol: "ump".into(),
+            bind: format!("127.0.0.1:{port}"),
+        });
     let running = Running::start(build(UMP_PACK, c, None, Arc::new(SystemClock)));
     let sender = UdpSocket::bind("127.0.0.1:0").unwrap();
     let target = ("127.0.0.1", port);

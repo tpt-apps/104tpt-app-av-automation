@@ -135,7 +135,10 @@ impl RateLimiter {
     /// state is plain accounting, a map of token counts plus `u64` counters, with no partially
     /// updated structure a panic mid-write could leave inconsistent.
     pub fn try_acquire(&self, key: &str, now: Timestamp) -> bool {
-        let mut guard = self.state.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut guard = self
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let (capacity, refill) = (self.capacity, self.refill_per_millis);
         let entry = guard
             .entry(key.to_owned())
@@ -181,29 +184,44 @@ impl RateLimiter {
     }
 
     fn bump_dropped(&self) {
-        let mut dropped = self.dropped.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut dropped = self
+            .dropped
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         *dropped += 1;
     }
 
     fn bump_muted(&self) {
-        let mut muted = self.muted_events.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut muted = self
+            .muted_events
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         *muted += 1;
     }
 
     fn bump_backoff(&self) {
-        let mut backoffs = self.backoffs.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut backoffs = self
+            .backoffs
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         *backoffs += 1;
     }
 
     /// Tokens currently available for `key`.
     pub fn available(&self, key: &str) -> f64 {
-        let guard = self.state.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let guard = self
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         guard.get(key).map(|s| s.tokens).unwrap_or(self.capacity)
     }
 
     /// How much longer `key` stays muted at `now`, in milliseconds; `0` when it may be admitted.
     pub fn muted_for_ms(&self, key: &str, now: Timestamp) -> u64 {
-        let guard = self.state.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let guard = self
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         guard
             .get(key)
             .filter(|s| s.level > 0 && now.as_millis() < s.muted_until)
@@ -213,17 +231,26 @@ impl RateLimiter {
 
     /// Total number of events dropped because a source exceeded its budget or was muted.
     pub fn dropped(&self) -> u64 {
-        *self.dropped.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+        *self
+            .dropped
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
     /// Events rejected while their source was already muted.
     pub fn muted(&self) -> u64 {
-        *self.muted_events.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+        *self
+            .muted_events
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
     /// Number of backoff episodes started, i.e. distinct times a source was muted.
     pub fn backoffs(&self) -> u64 {
-        *self.backoffs.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+        *self
+            .backoffs
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
     /// Drops all accounting, e.g. when a device is reconfigured.
@@ -232,9 +259,18 @@ impl RateLimiter {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clear();
-        *self.dropped.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = 0;
-        *self.muted_events.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = 0;
-        *self.backoffs.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = 0;
+        *self
+            .dropped
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = 0;
+        *self
+            .muted_events
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = 0;
+        *self
+            .backoffs
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = 0;
     }
 }
 
@@ -314,7 +350,10 @@ mod tests {
 
         // Inside the mute: rejected even though the token bucket has fully refilled.
         let t1 = Timestamp::from_millis(50);
-        assert!(limiter.try_acquire("calm", t1), "other sources are unaffected");
+        assert!(
+            limiter.try_acquire("calm", t1),
+            "other sources are unaffected"
+        );
         assert!(!limiter.try_acquire("noisy", t1));
         assert_eq!(limiter.muted(), 1);
 
@@ -371,8 +410,14 @@ mod tests {
         // A quiet period refills the bucket; the accepted event clears the strike.
         let t1 = Timestamp::from_millis(1_000);
         assert!(limiter.try_acquire("noisy", t1));
-        assert!(!limiter.try_acquire("noisy", t1), "strikes restarted at one");
-        assert!(!limiter.try_acquire("noisy", t1), "second strike trips backoff");
+        assert!(
+            !limiter.try_acquire("noisy", t1),
+            "strikes restarted at one"
+        );
+        assert!(
+            !limiter.try_acquire("noisy", t1),
+            "second strike trips backoff"
+        );
         assert_eq!(limiter.backoffs(), 1);
     }
 
@@ -385,7 +430,10 @@ mod tests {
         }
         assert_eq!(limiter.backoffs(), 1, "still inside the first mute");
         assert_eq!(limiter.muted(), 6);
-        assert!(limiter.try_acquire("quiet", t0), "other sources are unaffected");
+        assert!(
+            limiter.try_acquire("quiet", t0),
+            "other sources are unaffected"
+        );
         assert_eq!(limiter.muted_for_ms("quiet", t0), 0);
     }
 

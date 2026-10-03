@@ -23,7 +23,8 @@ impl MidiWriter for MidirWriter {
 }
 
 fn matches(name: &str, fragment: &str) -> bool {
-    name.to_lowercase().contains(&fragment.trim().to_lowercase())
+    name.to_lowercase()
+        .contains(&fragment.trim().to_lowercase())
 }
 
 /// Names of the MIDI output ports currently present.
@@ -31,7 +32,10 @@ pub fn output_port_names() -> Vec<String> {
     let Ok(out) = midir::MidiOutput::new(CLIENT) else {
         return Vec::new();
     };
-    out.ports().iter().filter_map(|p| out.port_name(p).ok()).collect()
+    out.ports()
+        .iter()
+        .filter_map(|p| out.port_name(p).ok())
+        .collect()
 }
 
 /// Names of the MIDI input ports currently present.
@@ -39,7 +43,11 @@ pub fn input_port_names() -> Vec<String> {
     let Ok(input) = midir::MidiInput::new(CLIENT) else {
         return Vec::new();
     };
-    input.ports().iter().filter_map(|p| input.port_name(p).ok()).collect()
+    input
+        .ports()
+        .iter()
+        .filter_map(|p| input.port_name(p).ok())
+        .collect()
 }
 
 /// Connects to the first output port whose name contains `fragment` (case-insensitive).

@@ -41,7 +41,9 @@ impl FieldSet {
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum CronError {
     /// The expression did not have exactly five fields.
-    #[error("cron expression must have 5 fields (minute hour day-of-month month day-of-week), got {0}")]
+    #[error(
+        "cron expression must have 5 fields (minute hour day-of-month month day-of-week), got {0}"
+    )]
     FieldCount(usize),
     /// One field could not be parsed.
     #[error("invalid cron {field} field `{value}`: {reason}")]
@@ -453,16 +455,31 @@ mod tests {
             CronSchedule::parse("* * * * * *").unwrap_err(),
             CronError::FieldCount(6)
         );
-        assert!(CronSchedule::parse("60 * * * *").is_err(), "minute above 59");
+        assert!(
+            CronSchedule::parse("60 * * * *").is_err(),
+            "minute above 59"
+        );
         assert!(CronSchedule::parse("* 24 * * *").is_err(), "hour above 23");
-        assert!(CronSchedule::parse("* * 0 * *").is_err(), "day of month below 1");
+        assert!(
+            CronSchedule::parse("* * 0 * *").is_err(),
+            "day of month below 1"
+        );
         assert!(CronSchedule::parse("* * * 13 *").is_err(), "month above 12");
         assert!(CronSchedule::parse("* * * * 8").is_err(), "weekday above 7");
         assert!(CronSchedule::parse("*/0 * * * *").is_err(), "zero step");
-        assert!(CronSchedule::parse("*/x * * * *").is_err(), "non-numeric step");
-        assert!(CronSchedule::parse("10-5 * * * *").is_err(), "reversed range");
+        assert!(
+            CronSchedule::parse("*/x * * * *").is_err(),
+            "non-numeric step"
+        );
+        assert!(
+            CronSchedule::parse("10-5 * * * *").is_err(),
+            "reversed range"
+        );
         assert!(CronSchedule::parse("  * * * *  ").is_err(), "empty field");
-        assert!(CronSchedule::parse("1,,2 * * * *").is_err(), "empty list element");
+        assert!(
+            CronSchedule::parse("1,,2 * * * *").is_err(),
+            "empty list element"
+        );
         assert!(CronSchedule::parse("nonsense * * * *").is_err());
         assert!(CronSchedule::parse("").is_err());
     }
@@ -472,9 +489,13 @@ mod tests {
         let err = CronSchedule::parse("0 99 * * *").unwrap_err().to_string();
         assert!(err.contains("hour"), "{err}");
         assert!(err.contains("99"), "{err}");
-        let err = CronSchedule::parse("0 0 * bogus *").unwrap_err().to_string();
+        let err = CronSchedule::parse("0 0 * bogus *")
+            .unwrap_err()
+            .to_string();
         assert!(err.contains("month"), "{err}");
-        let err = CronSchedule::parse("* * * * funday").unwrap_err().to_string();
+        let err = CronSchedule::parse("* * * * funday")
+            .unwrap_err()
+            .to_string();
         assert!(err.contains("day-of-week"), "{err}");
     }
 
@@ -491,6 +512,9 @@ mod tests {
             assert_eq!(once, twice, "{text}");
             assert_eq!(expr(text).to_expression(), twice, "{text}");
         }
-        assert_eq!(expr("0,30 8-18 * * mon-fri").to_expression(), "0,30 8-18 * * 1-5");
+        assert_eq!(
+            expr("0,30 8-18 * * mon-fri").to_expression(),
+            "0,30 8-18 * * 1-5"
+        );
     }
 }

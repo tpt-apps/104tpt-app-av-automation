@@ -48,7 +48,10 @@ pub struct DeviceConfig {
 impl DeviceConfig {
     /// Builds the registry entry.
     pub fn to_device(&self) -> Device {
-        let mut device = Device::new(self.id.as_str(), self.name.clone().unwrap_or_else(|| self.id.clone()));
+        let mut device = Device::new(
+            self.id.as_str(),
+            self.name.clone().unwrap_or_else(|| self.id.clone()),
+        );
         device.kind = self.kind;
         device.protocol = ProtocolBinding {
             protocol: self.protocol.clone(),
@@ -67,9 +70,7 @@ pub struct DeviceFile {
     pub devices: Vec<DeviceConfig>,
 }
 
-const PROTOCOLS: [&str; 7] = [
-    "osc", "artnet", "sacn", "midi", "ump", "dmx512", "virtual",
-];
+const PROTOCOLS: [&str; 7] = ["osc", "artnet", "sacn", "midi", "ump", "dmx512", "virtual"];
 
 impl DeviceFile {
     /// Parses YAML; a malformed document is a parse error, never a panic.
@@ -91,7 +92,10 @@ impl DeviceFile {
         for (i, d) in self.devices.iter().enumerate() {
             let loc = format!("devices[{i}]");
             if d.id.trim().is_empty() {
-                out.push(Diagnostic::error(format!("{loc}.id"), "device id must not be empty"));
+                out.push(Diagnostic::error(
+                    format!("{loc}.id"),
+                    "device id must not be empty",
+                ));
             } else if !seen.insert(d.id.clone()) {
                 out.push(Diagnostic::error(
                     format!("{loc}.id"),
@@ -101,10 +105,16 @@ impl DeviceFile {
             if !PROTOCOLS.contains(&d.protocol.as_str()) {
                 out.push(Diagnostic::error(
                     format!("{loc}.protocol"),
-                    format!("unknown protocol `{}`; expected one of: {}", d.protocol, PROTOCOLS.join(", ")),
+                    format!(
+                        "unknown protocol `{}`; expected one of: {}",
+                        d.protocol,
+                        PROTOCOLS.join(", ")
+                    ),
                 ));
             }
-            if matches!(d.protocol.as_str(), "osc" | "artnet" | "sacn" | "ump") && d.address.is_none() {
+            if matches!(d.protocol.as_str(), "osc" | "artnet" | "sacn" | "ump")
+                && d.address.is_none()
+            {
                 out.push(Diagnostic::error(
                     format!("{loc}.address"),
                     format!("`{}` devices need a host:port address", d.protocol),
@@ -190,20 +200,29 @@ devices:
 
     #[test]
     fn a_dmx512_device_needs_a_serial_port_name() {
-        let missing = DeviceFile::from_yaml_str("devices:\n  - {id: rig, protocol: dmx512}\n").unwrap();
+        let missing =
+            DeviceFile::from_yaml_str("devices:\n  - {id: rig, protocol: dmx512}\n").unwrap();
         let diags = missing.validate();
         let locations: Vec<_> = diags.iter().map(|d| d.location.as_str()).collect();
         assert_eq!(locations, vec!["devices[0].address"]);
 
-        let named =
-            DeviceFile::from_yaml_str("devices:\n  - {id: rig, protocol: dmx512, address: 'COM3'}\n")
-                .unwrap();
-        assert!(named.validate().is_empty(), "a named serial port is accepted");
+        let named = DeviceFile::from_yaml_str(
+            "devices:\n  - {id: rig, protocol: dmx512, address: 'COM3'}\n",
+        )
+        .unwrap();
+        assert!(
+            named.validate().is_empty(),
+            "a named serial port is accepted"
+        );
 
         let blank =
             DeviceFile::from_yaml_str("devices:\n  - {id: rig, protocol: dmx512, address: '  '}\n")
                 .unwrap();
-        assert_eq!(blank.validate().len(), 1, "a blank serial port name is rejected");
+        assert_eq!(
+            blank.validate().len(),
+            1,
+            "a blank serial port name is rejected"
+        );
     }
 
     #[test]
@@ -228,6 +247,9 @@ devices:
 
     #[test]
     fn garbage_is_a_parse_error() {
-        assert!(matches!(DeviceFile::from_yaml_str(": : :\n\t- ["), Err(Error::Parse(_))));
+        assert!(matches!(
+            DeviceFile::from_yaml_str(": : :\n\t- ["),
+            Err(Error::Parse(_))
+        ));
     }
 }

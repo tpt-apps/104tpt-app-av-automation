@@ -151,7 +151,11 @@ fn main() -> ProcessExit {
     let cli = match Cli::try_parse() {
         Ok(cli) => cli,
         Err(e) => {
-            let code = if e.use_stderr() { ExitCode::ConfigurationError } else { ExitCode::Success };
+            let code = if e.use_stderr() {
+                ExitCode::ConfigurationError
+            } else {
+                ExitCode::Success
+            };
             let _ = e.print();
             return ProcessExit::from(code as u8);
         }

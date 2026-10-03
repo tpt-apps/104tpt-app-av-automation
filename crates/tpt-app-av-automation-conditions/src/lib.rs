@@ -127,18 +127,27 @@ pub fn evaluate(condition: &Condition, ctx: &EvaluationContext) -> Evaluation {
         },
         ConditionSpec::RuleArmed { rule } => {
             if !ctx.known_rules.contains(rule) {
-                Evaluation::new(ConditionResult::Unknown, format!("rule `{rule}` does not exist"))
+                Evaluation::new(
+                    ConditionResult::Unknown,
+                    format!("rule `{rule}` does not exist"),
+                )
             } else {
                 let armed = ctx.armed_rules.contains(rule);
                 Evaluation::from_bool(
                     armed,
-                    format!("rule `{rule}` is {}", if armed { "armed" } else { "disarmed" }),
+                    format!(
+                        "rule `{rule}` is {}",
+                        if armed { "armed" } else { "disarmed" }
+                    ),
                 )
             }
         }
         ConditionSpec::RuleHasTag { tag } => {
             let has = ctx.rule_tags.iter().any(|t| t == tag);
-            Evaluation::from_bool(has, format!("tag `{tag}` {}", if has { "present" } else { "absent" }))
+            Evaluation::from_bool(
+                has,
+                format!("tag `{tag}` {}", if has { "present" } else { "absent" }),
+            )
         }
     }
 }
@@ -194,10 +203,22 @@ mod tests {
             from: at(18, 0),
             to: at(23, 0),
         });
-        assert_eq!(evaluate(&c, &time_ctx(17 * 60 + 59)).result, ConditionResult::NotMet);
-        assert_eq!(evaluate(&c, &time_ctx(18 * 60)).result, ConditionResult::Met);
-        assert_eq!(evaluate(&c, &time_ctx(22 * 60 + 59)).result, ConditionResult::Met);
-        assert_eq!(evaluate(&c, &time_ctx(23 * 60)).result, ConditionResult::NotMet);
+        assert_eq!(
+            evaluate(&c, &time_ctx(17 * 60 + 59)).result,
+            ConditionResult::NotMet
+        );
+        assert_eq!(
+            evaluate(&c, &time_ctx(18 * 60)).result,
+            ConditionResult::Met
+        );
+        assert_eq!(
+            evaluate(&c, &time_ctx(22 * 60 + 59)).result,
+            ConditionResult::Met
+        );
+        assert_eq!(
+            evaluate(&c, &time_ctx(23 * 60)).result,
+            ConditionResult::NotMet
+        );
     }
 
     #[test]
@@ -206,14 +227,23 @@ mod tests {
             from: at(22, 0),
             to: at(2, 0),
         });
-        assert_eq!(evaluate(&wrap, &time_ctx(23 * 60)).result, ConditionResult::Met);
+        assert_eq!(
+            evaluate(&wrap, &time_ctx(23 * 60)).result,
+            ConditionResult::Met
+        );
         assert_eq!(evaluate(&wrap, &time_ctx(60)).result, ConditionResult::Met);
-        assert_eq!(evaluate(&wrap, &time_ctx(12 * 60)).result, ConditionResult::NotMet);
+        assert_eq!(
+            evaluate(&wrap, &time_ctx(12 * 60)).result,
+            ConditionResult::NotMet
+        );
         let empty = cond(ConditionSpec::TimeWindow {
             from: at(5, 0),
             to: at(5, 0),
         });
-        assert_eq!(evaluate(&empty, &time_ctx(5 * 60)).result, ConditionResult::NotMet);
+        assert_eq!(
+            evaluate(&empty, &time_ctx(5 * 60)).result,
+            ConditionResult::NotMet
+        );
     }
 
     #[test]
@@ -222,7 +252,10 @@ mod tests {
             from: at(1, 0),
             to: at(2, 0),
         });
-        assert_eq!(evaluate(&c, &EvaluationContext::default()).result, ConditionResult::Unknown);
+        assert_eq!(
+            evaluate(&c, &EvaluationContext::default()).result,
+            ConditionResult::Unknown
+        );
     }
 
     #[test]
@@ -232,9 +265,17 @@ mod tests {
             equals: DeviceHealth::Online,
         });
         let mut ctx = EvaluationContext::default();
-        assert_eq!(evaluate(&c, &ctx).result, ConditionResult::Unknown, "unregistered");
+        assert_eq!(
+            evaluate(&c, &ctx).result,
+            ConditionResult::Unknown,
+            "unregistered"
+        );
         ctx.device_health.insert("d".into(), DeviceHealth::Unknown);
-        assert_eq!(evaluate(&c, &ctx).result, ConditionResult::Unknown, "never reported");
+        assert_eq!(
+            evaluate(&c, &ctx).result,
+            ConditionResult::Unknown,
+            "never reported"
+        );
         ctx.device_health.insert("d".into(), DeviceHealth::Offline);
         assert_eq!(evaluate(&c, &ctx).result, ConditionResult::NotMet);
         ctx.device_health.insert("d".into(), DeviceHealth::Online);

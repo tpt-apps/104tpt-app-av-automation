@@ -1054,6 +1054,8 @@ dependencies = [
  "tpt-app-av-automation-devices",
  "tpt-app-av-automation-engine",
  "tpt-app-av-automation-model",
+ "tpt-app-av-automation-triggers",
+ "tpt-av-control-osc",
 ]
 
 [[package]]

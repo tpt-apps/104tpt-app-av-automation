@@ -18,6 +18,23 @@ use tpt_app_av_automation_scenarios::{
 use tpt_av_control_dmx::artnet::build_artdmx;
 use tpt_av_control_osc::OscMessage;
 
+/// Polls `/health` until it answers `200`, or `BOOT_TIMEOUT` passes.
+///
+/// Deliberately short: this is only about waiting for a local process to bind its sockets, so a
+/// failure here means the engine exited (most likely a port collision) and the caller should retry
+/// with fresh ports rather than sit out a long timeout.
+fn wait_for_api(api: &str) -> bool {
+    const BOOT_TIMEOUT: Duration = Duration::from_secs(5);
+    let deadline = std::time::Instant::now() + BOOT_TIMEOUT;
+    while std::time::Instant::now() < deadline {
+        if http_get(api, "/health", TOKEN).0 == 200 {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(25));
+    }
+    false
+}
+
 /// Only one engine runs at a time, so the reserved listener ports cannot collide between scenarios.
 fn exclusive() -> MutexGuard<'static, ()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
@@ -57,56 +74,72 @@ struct Fixture {
 }
 
 impl Fixture {
+    /// Starts the engine, retrying with fresh ports if it loses a port race and exits.
+    ///
+    /// Reserving a port and then releasing it before the engine binds it is inherently racy, and
+    /// under a loaded machine (or `cargo test --workspace`, where every scenario runs at once)
+    /// something else can take the number in between. When that happens the engine exits at once,
+    /// which is correct behaviour and not the failure under test — so retry with new ports instead
+    /// of waiting out the full `PATIENCE` and failing the scenario.
     fn start(name: &str) -> Self {
-        let dir = TempDir::new(name);
-        let rules = dir.write("pack.yaml", PACK);
-        let devices = dir.write("devices.yaml", "devices:\n  - { id: rig, protocol: virtual }\n");
-        let osc = reserve_udp_port();
-        let artnet = reserve_udp_port();
-        let api = reserve_udp_port();
-        let osc_port = osc.port();
-        let artnet_port = artnet.port();
-        let api_addr = format!("127.0.0.1:{}", api.port());
-        // Release the reservations before the engine binds them.
-        drop(osc);
-        drop(artnet);
-        drop(api);
+        let mut last_error = String::new();
+        for attempt in 0..4 {
+            let dir = TempDir::new(name);
+            let rules = dir.write("pack.yaml", PACK);
+            let devices = dir.write(
+                "devices.yaml",
+                "devices:\n  - { id: rig, protocol: virtual }\n",
+            );
+            // Hold all three reservations at once so the numbers are distinct from each other and
+            // from any other scenario running concurrently, then release them before the engine
+            // binds them.
+            let guards = [reserve_udp_port(), reserve_udp_port(), reserve_udp_port()];
+            let osc_port = guards[0].port();
+            let artnet_port = guards[1].port();
+            let api_port = guards[2].port();
+            drop(guards);
 
-        let config = dir.write(
-            "service.yaml",
-            &format!(
-                "tick_ms: 25\nheartbeat_interval_ms: 200\n\
-                 listeners:\n\
-                 \x20 - {{ protocol: osc, bind: \"127.0.0.1:{osc_port}\" }}\n\
-                 \x20 - {{ protocol: artnet, bind: \"127.0.0.1:{artnet_port}\" }}\n\
-                 api:\n  enabled: true\n  bind: \"{api_addr}\"\n  token: {TOKEN:?}\n"
-            ),
-        );
-        let state = dir.path().join("state");
-        std::fs::create_dir_all(&state).unwrap();
+            let api_addr = format!("127.0.0.1:{api_port}");
+            let config = dir.write(
+                &format!("service-{attempt}.yaml"),
+                &format!(
+                    "tick_ms: 25\nheartbeat_interval_ms: 200\n\
+                     listeners:\n\
+                     \x20 - {{ protocol: osc, bind: \"127.0.0.1:{osc_port}\" }}\n\
+                     \x20 - {{ protocol: artnet, bind: \"127.0.0.1:{artnet_port}\" }}\n\
+                     api:\n  enabled: true\n  bind: \"{api_addr}\"\n  token: {TOKEN:?}\n"
+                ),
+            );
+            let state = dir.path().join("state");
+            std::fs::create_dir_all(&state).unwrap();
 
-        let engine = Engine::start(&[
-            "run",
-            "--service",
-            "--rules",
-            rules.to_str().unwrap(),
-            "--devices",
-            devices.to_str().unwrap(),
-            "--config",
-            config.to_str().unwrap(),
-            "--state-dir",
-            state.to_str().unwrap(),
-        ]);
-        wait_until("the API to answer", PATIENCE, || {
-            http_get(&api_addr, "/health", TOKEN).0 == 200
-        });
-        Self {
-            _dir: dir,
-            engine,
-            osc_port,
-            artnet_port,
-            api: api_addr,
+            let engine = Engine::start(&[
+                "run",
+                "--service",
+                "--rules",
+                rules.to_str().unwrap(),
+                "--devices",
+                devices.to_str().unwrap(),
+                "--config",
+                config.to_str().unwrap(),
+                "--state-dir",
+                state.to_str().unwrap(),
+            ]);
+            let fixture = Self {
+                _dir: dir,
+                engine,
+                osc_port,
+                artnet_port,
+                api: api_addr,
+            };
+            // A local process binds its listeners in well under a second; if the API has not
+            // answered by then the engine exited, almost certainly on a port collision.
+            if wait_for_api(&fixture.api) {
+                return fixture;
+            }
+            last_error = "the API never answered".into();
         }
+        panic!("the engine never became ready after 4 attempts: {last_error}");
     }
 
     /// Sends raw bytes to a listener.
@@ -213,7 +246,9 @@ fn malformed_art_net_cannot_bring_the_engine_down() {
     // A genuine Art-Net frame still triggers the DMX rule.
     let before = f.incidents();
     f.send(f.artnet_port, &build_artdmx(1, 2, &frame));
-    wait_until("the Art-Net rule to fire", PATIENCE, || f.incidents() > before);
+    wait_until("the Art-Net rule to fire", PATIENCE, || {
+        f.incidents() > before
+    });
 }
 
 /// Sustained flooding from one source must be absorbed, not allowed to exhaust the engine.

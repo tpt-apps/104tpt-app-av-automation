@@ -14,7 +14,8 @@ use std::time::Duration;
 use std::sync::{Mutex, MutexGuard, OnceLock};
 
 use tpt_app_av_automation_scenarios::{
-    cli, code, http_get, http_post, stderr, stdout, wait_until, Engine, TempDir, EXIT_OK, PATIENCE, TOKEN,
+    cli, code, http_get, http_post, stderr, stdout, wait_until, Engine, TempDir, EXIT_OK, PATIENCE,
+    TOKEN,
 };
 
 /// Only one engine runs at a time in this suite.
@@ -83,7 +84,10 @@ impl Harness {
         let api_port = tpt_app_av_automation_scenarios::free_udp_port();
         let dir = TempDir::new(name);
         let rules = dir.write("pack.yaml", pack);
-        let devices = dir.write("devices.yaml", "devices:\n  - { id: rig, protocol: virtual }\n");
+        let devices = dir.write(
+            "devices.yaml",
+            "devices:\n  - { id: rig, protocol: virtual }\n",
+        );
         let config = dir.write(
             "service.yaml",
             &format!(
@@ -134,7 +138,6 @@ impl Harness {
         engine
     }
 }
-
 
 /// Killing the engine must never corrupt the state database: `history` can still read it afterwards,
 /// and it still reports the executions that had been recorded.
@@ -222,7 +225,9 @@ fn an_engine_restarted_after_a_kill_still_executes_rules() {
     let mut first = h.start();
     let _ = http_post(&h.api, "/rules/r/run", TOKEN);
     wait_until("the first run to be recorded", PATIENCE, || {
-        http_get(&h.api, "/executions", TOKEN).1.contains("fired by chaos")
+        http_get(&h.api, "/executions", TOKEN)
+            .1
+            .contains("fired by chaos")
     });
     first.kill();
 
@@ -282,4 +287,3 @@ fn the_engine_can_be_killed_repeatedly_and_still_start() {
     );
     last.kill();
 }
-

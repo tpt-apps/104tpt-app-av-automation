@@ -162,7 +162,10 @@ mod tests {
     fn offline_fails_and_recovers() {
         let ep = VirtualEndpoint::new();
         ep.set_offline(true);
-        assert!(matches!(ep.send(&osc()), Err(EndpointError::Unreachable(_))));
+        assert!(matches!(
+            ep.send(&osc()),
+            Err(EndpointError::Unreachable(_))
+        ));
         assert!(ep.ping().is_err());
         ep.set_offline(false);
         assert!(ep.send(&osc()).is_ok());

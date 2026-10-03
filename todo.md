@@ -168,7 +168,15 @@ Phase 4 and 5 are untouched.
 ## Phase 3 — Hardening & Release (§24.1 steps 20–23, §24 Definition of Done)
 
 - [ ] Benchmark and profile under sustained live-event-like event load
-  - _Status:_ throughput benchmark done (≈265k events/s release, `docs/reliability.md`); no profiler run, no device-latency measurements.
+  - _Status:_ throughput benchmarked (≈265k events/s release, `docs/reliability.md`) and latency is now
+    measured as percentiles rather than an average: `tests/latency.rs` gates p99 against a 20 ms cue
+    budget, records the dispatch curve from 5 to 500 rules (p50 3 µs → 62 µs, linear in pack size),
+    checks that an unmatched event is cheaper than a fired one (p99 1 µs vs 13 µs), and times a real
+    OSC datagram in → datagram out across two loopback sockets through the production `Inbound` gate
+    (p50 17 µs, p99 81 µs). Numbers and reading are in `docs/reliability.md`. **Still not done:** no
+    sampling profiler has been run (so no flame graph or allocation profile), and no physical device
+    has been measured — the loopback figure covers what the software controls, not a fixture's own
+    latency, a DMX fixture's settling time or a MIDI port's buffering.
 - [x] Harden error handling and failure isolation
   - _Status:_ panic isolation, bounded queues/cascades/history and persistence-failure isolation are
     in. A systematic audit of every `unwrap`/`expect`/panic in production code is done, and it fixed

@@ -40,7 +40,8 @@ rules:
       - { id: note, type: log.incident, severity: high, message: knob moved }
 "#;
 
-const DEVICES: &str = "devices:\n  - { id: rig, protocol: virtual }\n  - { id: mixer, protocol: virtual }\n";
+const DEVICES: &str =
+    "devices:\n  - { id: rig, protocol: virtual }\n  - { id: mixer, protocol: virtual }\n";
 
 /// Polls the API until it answers `200` for `/health`, or the timeout expires.
 fn wait_for_api(addr: &str, timeout: std::time::Duration) -> bool {
@@ -152,12 +153,7 @@ impl<'a> Fixture<'a> {
     /// The parsed `/executions` body.
     fn executions_json(&self) -> serde_json::Value {
         let (status, body) = http_get(&self.api, "/executions", TOKEN);
-        assert_eq!(
-            status,
-            200,
-            "the API refused /executions: {}",
-            body
-        );
+        assert_eq!(status, 200, "the API refused /executions: {}", body);
         serde_json::from_str(&body).expect("the API returned valid JSON")
     }
 
@@ -183,7 +179,10 @@ impl<'a> Fixture<'a> {
 #[test]
 fn an_osc_message_arriving_over_udp_triggers_a_rule_and_is_logged() {
     let mut f = Fixture::start("e2e-osc");
-    assert!(f.engine.is_running(), "the service exited before the trigger");
+    assert!(
+        f.engine.is_running(),
+        "the service exited before the trigger"
+    );
 
     let packet = OscMessage::new("/go", &[]).unwrap().encode();
     f.send_and_wait(f.osc_port, &packet, "the OSC rule to execute");
@@ -200,7 +199,10 @@ fn an_osc_message_arriving_over_udp_triggers_a_rule_and_is_logged() {
     let record = &value["executions"][0];
     assert_eq!(record["trigger_type"], "osc");
     assert_eq!(record["overall_status"], "success");
-    assert_eq!(record["simulated"], false, "the rule is armed, so this must be live");
+    assert_eq!(
+        record["simulated"], false,
+        "the rule is armed, so this must be live"
+    );
     let action = &record["action_results"][0];
     assert_eq!(action["action_id"], "light");
     assert_eq!(action["action_type"], "control.dmx_channels");
@@ -285,7 +287,10 @@ fn the_api_refuses_requests_without_a_token_even_while_traffic_flows() {
     );
     // And the engine is unharmed by the rejected request.
     let packet = OscMessage::new("/go", &[]).unwrap().encode();
-    f.send_and_wait(f.osc_port, &packet, "the rule to still fire after a rejected request");
+    f.send_and_wait(
+        f.osc_port,
+        &packet,
+        "the rule to still fire after a rejected request",
+    );
     assert!(f.fired_rules().iter().any(|id| id == "osc_go"));
 }
-

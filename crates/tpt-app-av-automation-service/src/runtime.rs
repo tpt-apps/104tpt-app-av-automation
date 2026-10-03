@@ -130,7 +130,9 @@ impl Drop for WorkerGuard {
         self.live.fetch_sub(1, Ordering::SeqCst);
         // One message per worker, on the way out of an unwind that may be unwinding already.
         if !self.reported.swap(true, Ordering::SeqCst) {
-            tracing::error!("a listener thread exited unexpectedly; that protocol is no longer receiving");
+            tracing::error!(
+                "a listener thread exited unexpectedly; that protocol is no longer receiving"
+            );
         }
     }
 }

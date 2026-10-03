@@ -69,13 +69,11 @@ fn validate_invocations(pack: &RulePack, diagnostics: &mut Vec<Diagnostic>) {
                         ));
                     }
                 }
-                ActionSpec::InvokeRule { rule: target } => {
-                    if !known.contains(target.as_str()) {
-                        diagnostics.push(Diagnostic::error(
-                            format!("rules[{index}].actions"),
-                            format!("invoke_rule targets unknown rule `{target}`"),
-                        ));
-                    }
+                ActionSpec::InvokeRule { rule: target } if !known.contains(target.as_str()) => {
+                    diagnostics.push(Diagnostic::error(
+                        format!("rules[{index}].actions"),
+                        format!("invoke_rule targets unknown rule `{target}`"),
+                    ));
                 }
                 _ => {}
             }

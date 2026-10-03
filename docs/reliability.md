@@ -80,7 +80,44 @@ cargo test --release -p tpt-app-av-automation-test --test chaos sustained -- --n
 ```
 
 This measures the engine, not real devices: network round trips and `workflow.wait` dominate in
-practice. No profiler run has been done.
+practice.
+
+## Measured latency
+
+Throughput says nothing about when a cue *lands*. `crates/tpt-app-av-automation-test/tests/latency.rs`
+measures latency as percentiles — an average hides exactly the slow tail that makes a show miss a
+cue — and gates on p99 against a 20 ms cue budget. Run it against an optimized build:
+
+```sh
+cargo test --release -p tpt-app-av-automation-test --test latency -- --nocapture
+```
+
+| What is measured | p50 | p90 | p99 | max |
+|---|---|---|---|---|
+| Engine dispatch, 20 rules, in-memory device | 2 µs | 7 µs | 13 µs | 55 µs |
+| …same, event matching no rule | 0 µs | 0 µs | 1 µs | 9 µs |
+| …same, 100 rules | 14 µs | 17 µs | 23 µs | 92 µs |
+| …same, 500 rules | 62 µs | 68 µs | 91 µs | 269 µs |
+| OSC datagram in → OSC datagram out, loopback sockets | 17 µs | 27 µs | 81 µs | 300 µs |
+
+Release build on the development machine; absolute numbers will differ elsewhere, the shape will not.
+
+Two things worth reading off that table:
+
+* **The rule scan is the only thing that scales with the pack.** 5→500 rules moves the median from
+  3 µs to 62 µs — linear in pack size, as expected, and still two orders of magnitude inside the
+  budget. `dispatch_latency_scales_with_pack_size` fails if it stops being linear-ish, so a future
+  change to matching cannot quietly turn a large pack into a slow one.
+* **An unmatched event costs almost nothing** (p99 1 µs). The engine rejects it during matching and
+  never enters action execution, so an idle rule set costs a venue nothing while traffic flows.
+
+The last row is the closest thing to a device measurement available without hardware: a real OSC
+datagram crosses one loopback socket into a live listener thread, is parsed by the production
+`Inbound` gate (size, event-count and rate-limit checks included), matched, executed, and leaves
+through a second real socket. It times everything the software controls, including the encode and the
+syscalls, and it asserts every cue arrived intact and in order. It still measures loopback, not a
+fixture: a physical device's own latency, a DMX fixture's settling time and a MIDI port's buffering
+are outside it and can only be measured on site.
 
 ## Known limits
 

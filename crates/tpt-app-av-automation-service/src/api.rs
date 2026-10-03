@@ -172,7 +172,9 @@ pub fn parse_request<R: BufRead>(r: &mut R) -> std::result::Result<Request, Http
         if headers.len() >= MAX_HEADERS || header_bytes > MAX_HEADER_BYTES {
             return Err(HttpError::TooLarge("too many headers"));
         }
-        let (name, value) = line.split_once(':').ok_or(HttpError::Bad("malformed header"))?;
+        let (name, value) = line
+            .split_once(':')
+            .ok_or(HttpError::Bad("malformed header"))?;
         if name.is_empty() || name.contains(' ') {
             return Err(HttpError::Bad("malformed header name"));
         }
@@ -299,7 +301,10 @@ fn origin_ok(origin: &str) -> bool {
 }
 
 fn query_value<'a>(req: &'a Request, key: &str) -> Option<&'a str> {
-    req.query.iter().find(|(k, _)| k == key).map(|(_, v)| v.as_str())
+    req.query
+        .iter()
+        .find(|(k, _)| k == key)
+        .map(|(_, v)| v.as_str())
 }
 
 fn filter_from(req: &Request) -> std::result::Result<(Filter, usize), String> {
@@ -316,7 +321,10 @@ fn filter_from(req: &Request) -> std::result::Result<(Filter, usize), String> {
     }
     let number = |key: &str| -> std::result::Result<Option<u64>, String> {
         query_value(req, key)
-            .map(|v| v.parse::<u64>().map_err(|_| format!("`{key}` must be a number")))
+            .map(|v| {
+                v.parse::<u64>()
+                    .map_err(|_| format!("`{key}` must be a number"))
+            })
             .transpose()
     };
     filter.since_ms = number("since")?;
@@ -341,7 +349,10 @@ pub fn route(req: &Request, handle: &ServiceHandle, token: &str) -> Outcome {
     }
     if let Some(origin) = req.headers.get("origin") {
         if !origin_ok(origin) {
-            return Outcome::Respond(Response::error(403, "cross-origin requests are not allowed"));
+            return Outcome::Respond(Response::error(
+                403,
+                "cross-origin requests are not allowed",
+            ));
         }
     }
     let presented = req
@@ -351,11 +362,18 @@ pub fn route(req: &Request, handle: &ServiceHandle, token: &str) -> Outcome {
         .unwrap_or("");
     if !constant_time_eq(presented.as_bytes(), token.as_bytes()) {
         let mut response = Response::error(401, "a valid bearer token is required");
-        response.headers.push(("WWW-Authenticate", "Bearer".to_string()));
+        response
+            .headers
+            .push(("WWW-Authenticate", "Bearer".to_string()));
         return Outcome::Respond(response);
     }
 
-    let segments: Vec<&str> = req.path.trim_matches('/').split('/').filter(|s| !s.is_empty()).collect();
+    let segments: Vec<&str> = req
+        .path
+        .trim_matches('/')
+        .split('/')
+        .filter(|s| !s.is_empty())
+        .collect();
     let method = req.method.as_str();
     let not_allowed = || Outcome::Respond(Response::error(405, "method not allowed"));
     let respond = |r: Response| Outcome::Respond(r);
@@ -384,7 +402,11 @@ pub fn route(req: &Request, handle: &ServiceHandle, token: &str) -> Outcome {
                 .unwrap_or(100)
                 .clamp(1, 1000);
             respond(match &handle.store {
-                Some(store) => match store.lock().unwrap_or_else(|e| e.into_inner()).incidents(limit) {
+                Some(store) => match store
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .incidents(limit)
+                {
                     Ok(incidents) => Response::json(200, json!({ "incidents": incidents })),
                     Err(e) => Response::error(500, e.to_string()),
                 },
@@ -420,12 +442,18 @@ pub fn route(req: &Request, handle: &ServiceHandle, token: &str) -> Outcome {
                     .headers
                     .get("connection")
                     .is_some_and(|v| v.to_ascii_lowercase().contains("upgrade"))
-                && req.headers.get("sec-websocket-version").is_some_and(|v| v == "13");
+                && req
+                    .headers
+                    .get("sec-websocket-version")
+                    .is_some_and(|v| v == "13");
             match req.headers.get("sec-websocket-key") {
                 Some(key) if wants_upgrade && ws::valid_client_key(key) => {
                     Outcome::Upgrade(ws::accept_key(key))
                 }
-                _ => respond(Response::error(400, "this endpoint requires a WebSocket upgrade")),
+                _ => respond(Response::error(
+                    400,
+                    "this endpoint requires a WebSocket upgrade",
+                )),
             }
         }
         (["events"], _) => not_allowed(),
@@ -435,7 +463,13 @@ pub fn route(req: &Request, handle: &ServiceHandle, token: &str) -> Outcome {
 
 fn health(handle: &ServiceHandle) -> Value {
     let snapshot = handle.snapshot();
-    let count = |h: DeviceHealth| snapshot.devices.iter().filter(|d| d.health == h.to_string()).count();
+    let count = |h: DeviceHealth| {
+        snapshot
+            .devices
+            .iter()
+            .filter(|d| d.health == h.to_string())
+            .count()
+    };
     let (live_workers, expected_workers) = (handle.live_workers(), handle.expected_workers());
     let lost_workers = expected_workers.saturating_sub(live_workers);
     // A lost listener outranks a degraded device: every device is fine, but a protocol has gone
@@ -499,22 +533,31 @@ fn executions(handle: &ServiceHandle, filter: &Filter, limit: usize) -> Response
 }
 
 /// Starts the API listener. The bind address was validated to be loopback by the service config.
-pub(crate) fn spawn(handle: ServiceHandle, config: &ApiConfig) -> Result<(SocketAddr, JoinHandle<()>)> {
+pub(crate) fn spawn(
+    handle: ServiceHandle,
+    config: &ApiConfig,
+) -> Result<(SocketAddr, JoinHandle<()>)> {
     let token = config
         .token
         .clone()
         .filter(|t| !t.is_empty())
         .ok_or_else(|| Error::InvalidOperation("the API cannot start without a token".into()))?;
-    let bind: SocketAddr = config
-        .bind
-        .parse()
-        .map_err(|_| Error::InvalidOperation(format!("invalid API bind address `{}`", config.bind)))?;
+    let bind: SocketAddr = config.bind.parse().map_err(|_| {
+        Error::InvalidOperation(format!("invalid API bind address `{}`", config.bind))
+    })?;
     if !bind.ip().is_loopback() {
-        return Err(Error::InvalidOperation("the API only binds to loopback addresses".into()));
+        return Err(Error::InvalidOperation(
+            "the API only binds to loopback addresses".into(),
+        ));
     }
-    let listener = TcpListener::bind(bind).map_err(|e| Error::Control(format!("cannot bind API on {bind}: {e}")))?;
-    listener.set_nonblocking(true).map_err(|e| Error::Control(e.to_string()))?;
-    let addr = listener.local_addr().map_err(|e| Error::Control(e.to_string()))?;
+    let listener = TcpListener::bind(bind)
+        .map_err(|e| Error::Control(format!("cannot bind API on {bind}: {e}")))?;
+    listener
+        .set_nonblocking(true)
+        .map_err(|e| Error::Control(e.to_string()))?;
+    let addr = listener
+        .local_addr()
+        .map_err(|e| Error::Control(e.to_string()))?;
     let token = Arc::new(token);
     let active = Arc::new(AtomicUsize::new(0));
 
@@ -527,7 +570,8 @@ pub(crate) fn spawn(handle: ServiceHandle, config: &ApiConfig) -> Result<(Socket
                     if active.fetch_add(1, Ordering::SeqCst) >= MAX_CONNECTIONS {
                         active.fetch_sub(1, Ordering::SeqCst);
                         let mut stream = stream;
-                        let _ = stream.write_all(&Response::error(503, "too many connections").to_bytes());
+                        let _ = stream
+                            .write_all(&Response::error(503, "too many connections").to_bytes());
                         continue;
                     }
                     let (handle, token, active) = (handle.clone(), token.clone(), active.clone());
@@ -553,7 +597,9 @@ fn serve(stream: TcpStream, handle: &ServiceHandle, token: &str) {
     let _ = stream.set_nonblocking(false);
     let _ = stream.set_read_timeout(Some(IO_TIMEOUT));
     let _ = stream.set_write_timeout(Some(IO_TIMEOUT));
-    let Ok(read_half) = stream.try_clone() else { return };
+    let Ok(read_half) = stream.try_clone() else {
+        return;
+    };
     let mut reader = BufReader::new(read_half);
     let mut stream = stream;
 
@@ -622,7 +668,13 @@ mod tests {
         let r = parse("GET /executions?rule=main%20hall&limit=5 HTTP/1.1\r\nHost: 127.0.0.1\r\nAuthorization: Bearer abc\r\n\r\n").unwrap();
         assert_eq!(r.method, "GET");
         assert_eq!(r.path, "/executions");
-        assert_eq!(r.query, [("rule".into(), "main hall".into()), ("limit".into(), "5".into())]);
+        assert_eq!(
+            r.query,
+            [
+                ("rule".into(), "main hall".into()),
+                ("limit".into(), "5".into())
+            ]
+        );
         assert_eq!(r.headers["authorization"], "Bearer abc");
         assert!(r.body.is_empty());
     }
@@ -631,7 +683,10 @@ mod tests {
     fn reads_a_body_of_the_declared_length() {
         let r = parse("POST /x HTTP/1.1\r\nContent-Length: 5\r\n\r\nhello").unwrap();
         assert_eq!(r.body, b"hello");
-        assert_eq!(parse("POST /x HTTP/1.1\r\nContent-Length: 5\r\n\r\nhe"), Err(HttpError::Io));
+        assert_eq!(
+            parse("POST /x HTTP/1.1\r\nContent-Length: 5\r\n\r\nhe"),
+            Err(HttpError::Io)
+        );
     }
 
     #[test]
@@ -658,7 +713,10 @@ mod tests {
     #[test]
     fn enforces_size_limits() {
         let long_target = format!("GET /{} HTTP/1.1\r\n\r\n", "a".repeat(MAX_LINE + 10));
-        assert_eq!(parse(&long_target), Err(HttpError::TooLarge("line too long")));
+        assert_eq!(
+            parse(&long_target),
+            Err(HttpError::TooLarge("line too long"))
+        );
         let many = format!("GET / HTTP/1.1\r\n{}\r\n", "X-H: 1\r\n".repeat(200));
         // Repeated names collapse, so use distinct ones to exceed the header cap.
         let distinct: String = (0..100).map(|i| format!("X-{i}: 1\r\n")).collect();
@@ -667,7 +725,10 @@ mod tests {
             Err(HttpError::TooLarge(_))
         ));
         let _ = many;
-        let body = format!("POST / HTTP/1.1\r\nContent-Length: {}\r\n\r\n", MAX_BODY + 1);
+        let body = format!(
+            "POST / HTTP/1.1\r\nContent-Length: {}\r\n\r\n",
+            MAX_BODY + 1
+        );
         assert_eq!(parse(&body), Err(HttpError::TooLarge("body too large")));
     }
 
@@ -694,7 +755,8 @@ mod tests {
             let _ = parse_request(&mut Cursor::new(data));
         }
         // Truncations of a valid request at every byte.
-        let valid = b"POST /rules/a/run?x=1 HTTP/1.1\r\nHost: localhost\r\nContent-Length: 3\r\n\r\nabc";
+        let valid =
+            b"POST /rules/a/run?x=1 HTTP/1.1\r\nHost: localhost\r\nContent-Length: 3\r\n\r\nabc";
         for cut in 0..valid.len() {
             let _ = parse_request(&mut Cursor::new(valid[..cut].to_vec()));
         }
@@ -724,7 +786,8 @@ mod tests {
     #[test]
     fn query_filters_are_validated() {
         let req = |q: &str| parse(&format!("GET /executions?{q} HTTP/1.1\r\n\r\n")).unwrap();
-        let (filter, limit) = filter_from(&req("status=failed&rule=a&limit=5000&simulated=true")).unwrap();
+        let (filter, limit) =
+            filter_from(&req("status=failed&rule=a&limit=5000&simulated=true")).unwrap();
         assert_eq!(filter.status, Some(ExecutionStatus::Failed));
         assert_eq!(filter.rule.as_deref(), Some("a"));
         assert_eq!(filter.simulated, Some(true));

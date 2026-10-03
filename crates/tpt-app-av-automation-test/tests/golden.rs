@@ -21,7 +21,11 @@ fn replay(name: &str) -> Replay {
 #[test]
 fn every_golden_fixture_matches_its_recorded_trace() {
     let dirs = discover("golden");
-    assert!(dirs.len() >= 10, "golden fixtures are missing: found {}", dirs.len());
+    assert!(
+        dirs.len() >= 10,
+        "golden fixtures are missing: found {}",
+        dirs.len()
+    );
     for dir in dirs {
         assert_golden(&dir);
     }
@@ -61,7 +65,10 @@ fn golden_fixtures_exercise_every_mvp_trigger_and_action() {
         "manual",
         "api",
     ] {
-        assert!(triggers.contains(trigger), "no golden fixture fires a `{trigger}` trigger");
+        assert!(
+            triggers.contains(trigger),
+            "no golden fixture fires a `{trigger}` trigger"
+        );
     }
     for action in [
         "control.osc",
@@ -76,7 +83,10 @@ fn golden_fixtures_exercise_every_mvp_trigger_and_action() {
         "workflow.wait",
         "workflow.invoke_rule",
     ] {
-        assert!(actions.contains(action), "no golden fixture successfully executes `{action}` live");
+        assert!(
+            actions.contains(action),
+            "no golden fixture successfully executes `{action}` live"
+        );
     }
 }
 
@@ -91,17 +101,30 @@ fn live_event_start_fires_on_the_right_weekdays_once_and_honours_its_condition()
         [ExecutionStatus::Success, ExecutionStatus::Skipped],
         "Monday fires once, Saturday never, Tuesday is blocked by the offline projector"
     );
-    assert_eq!(r.sent["lighting-rack"], ["dmx scene `house-to-half` fade 3000ms"]);
+    assert_eq!(
+        r.sent["lighting-rack"],
+        ["dmx scene `house-to-half` fade 3000ms"]
+    );
     assert_eq!(r.sent["projector-1"], ["osc /projector/1/power = 1"]);
-    assert_eq!(r.sent["audio-matrix"], ["audio switch `playback-1` -> `main-pa`"]);
-    assert!(r.records[1].action_results.is_empty(), "a blocked rule runs nothing");
+    assert_eq!(
+        r.sent["audio-matrix"],
+        ["audio switch `playback-1` -> `main-pa`"]
+    );
+    assert!(
+        r.records[1].action_results.is_empty(),
+        "a blocked rule runs nothing"
+    );
 }
 
 #[test]
 fn osc_cues_respect_arguments_and_single_segment_wildcards() {
     let r = replay("osc-cue");
     let fired: Vec<_> = r.records.iter().map(|x| x.rule_id.as_str()).collect();
-    assert_eq!(fired, ["cue-1", "any-mute"], "only /cue/1=1 and /channel/7/mute with an argument");
+    assert_eq!(
+        fired,
+        ["cue-1", "any-mute"],
+        "only /cue/1=1 and /channel/7/mute with an argument"
+    );
 }
 
 #[test]
@@ -119,7 +142,10 @@ fn dmx_edge_trigger_fires_only_on_crossings_and_only_when_the_condition_holds() 
     // 50 -> 150 crosses, but the master (ch 0) has not been seen yet: Unknown blocks it.
     // After the master is at 255: 20 -> 101 crosses again and fires.
     let statuses: Vec<_> = r.records.iter().map(|x| x.overall_status).collect();
-    assert_eq!(statuses, [ExecutionStatus::Skipped, ExecutionStatus::Success]);
+    assert_eq!(
+        statuses,
+        [ExecutionStatus::Skipped, ExecutionStatus::Success]
+    );
     assert!(r.records[0].blocked_by_unknown_condition());
     assert_eq!(r.sent["node"].len(), 2);
 }
@@ -130,12 +156,26 @@ fn a_failed_failover_step_is_a_partial_failure_and_escalates_then_recovers() {
     assert_eq!(r.records.len(), 2);
     let first = &r.records[0];
     assert_eq!(first.overall_status, ExecutionStatus::PartialFailure);
-    let ids: Vec<_> = first.action_results.iter().map(|a| a.action_id.as_str()).collect();
-    assert_eq!(ids, ["switch-input", "tell-operator", "incident", "escalate"]);
+    let ids: Vec<_> = first
+        .action_results
+        .iter()
+        .map(|a| a.action_id.as_str())
+        .collect();
+    assert_eq!(
+        ids,
+        ["switch-input", "tell-operator", "incident", "escalate"]
+    );
     assert!(first.action_results[0].outcome.is_failure());
     assert!(first.action_results[1].outcome.is_skipped());
-    assert!(first.action_results[3].outcome.is_success(), "the fallback ran");
-    assert_eq!(r.records[1].overall_status, ExecutionStatus::Success, "healthy switcher: clean run");
+    assert!(
+        first.action_results[3].outcome.is_success(),
+        "the fallback ran"
+    );
+    assert_eq!(
+        r.records[1].overall_status,
+        ExecutionStatus::Success,
+        "healthy switcher: clean run"
+    );
     assert_eq!(r.sent["switcher"], ["osc /switcher/main/input = 2"]);
 }
 
@@ -152,8 +192,15 @@ fn disarmed_rules_never_reach_a_device_but_armed_ones_do() {
     let r = replay("disarmed-simulation");
     let simulated: Vec<_> = r.records.iter().map(|x| x.simulated).collect();
     assert_eq!(simulated, [true, true, false, true]);
-    assert_eq!(r.sent["projector-1"], ["osc /power = 1"], "only the one armed execution was delivered");
-    assert!(r.records[1].overall_status == ExecutionStatus::Success, "an offline device is irrelevant to a simulation");
+    assert_eq!(
+        r.sent["projector-1"],
+        ["osc /power = 1"],
+        "only the one armed execution was delivered"
+    );
+    assert!(
+        r.records[1].overall_status == ExecutionStatus::Success,
+        "an offline device is irrelevant to a simulation"
+    );
 }
 
 #[test]
@@ -169,17 +216,32 @@ fn conflicting_rules_resolve_by_priority_with_the_loser_recorded() {
     let order: Vec<_> = r.records.iter().map(|x| x.rule_id.as_str()).collect();
     assert_eq!(order, ["aa-critical", "bb-normal", "zz-low"]);
     let low = &r.records[2];
-    assert!(matches!(&low.action_results[0].outcome, ActionOutcome::Skipped { reason } if reason.contains("aa-critical")));
-    assert_eq!(r.sent["proj"], ["osc /input = 2", "osc /input = 2", "osc /other = 5"]);
+    assert!(
+        matches!(&low.action_results[0].outcome, ActionOutcome::Skipped { reason } if reason.contains("aa-critical"))
+    );
+    assert_eq!(
+        r.sent["proj"],
+        ["osc /input = 2", "osc /input = 2", "osc /other = 5"]
+    );
 }
 
 #[test]
 fn workflow_steps_run_in_order_and_nest() {
     let r = replay("wait-invoke-library");
     let rules: Vec<_> = r.records.iter().map(|x| x.rule_id.as_str()).collect();
-    assert_eq!(rules, ["announce", "sequence"], "the invoked rule completes first");
-    assert!(r.records.iter().all(|x| x.overall_status == ExecutionStatus::Success));
-    assert_eq!(r.sent["projector-1"], ["osc /projector/power = 1", "video switch `hdmi-2`"]);
+    assert_eq!(
+        rules,
+        ["announce", "sequence"],
+        "the invoked rule completes first"
+    );
+    assert!(r
+        .records
+        .iter()
+        .all(|x| x.overall_status == ExecutionStatus::Success));
+    assert_eq!(
+        r.sent["projector-1"],
+        ["osc /projector/power = 1", "video switch `hdmi-2`"]
+    );
 }
 
 #[test]

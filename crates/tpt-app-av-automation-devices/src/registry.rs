@@ -134,7 +134,10 @@ impl DeviceRegistry {
 
     /// Changes health, returning the transition event when the state actually changed.
     pub fn set_health(&mut self, id: &str, health: DeviceHealth) -> Result<Option<Event>> {
-        let device = self.devices.get_mut(id).ok_or_else(|| Self::not_found(id))?;
+        let device = self
+            .devices
+            .get_mut(id)
+            .ok_or_else(|| Self::not_found(id))?;
         if device.health == health {
             return Ok(None);
         }
@@ -149,7 +152,10 @@ impl DeviceRegistry {
 
     /// Records a heartbeat: refreshes `last_seen` and brings the device online.
     pub fn heartbeat(&mut self, id: &str, now: Timestamp) -> Result<Vec<Event>> {
-        let device = self.devices.get_mut(id).ok_or_else(|| Self::not_found(id))?;
+        let device = self
+            .devices
+            .get_mut(id)
+            .ok_or_else(|| Self::not_found(id))?;
         device.last_seen = Some(now);
         let mut events = Vec::new();
         if device.health != DeviceHealth::Online {
@@ -215,7 +221,8 @@ impl DeviceRegistry {
 
     /// Records a DMX observation and returns the previous value for that channel, if any.
     pub fn observe_dmx(&mut self, level: DmxLevel) -> Option<u8> {
-        self.dmx.insert((level.universe, level.channel), level.value)
+        self.dmx
+            .insert((level.universe, level.channel), level.value)
     }
 
     /// Last observed value of a DMX channel.
@@ -268,7 +275,10 @@ mod tests {
                 current: DeviceHealth::Online
             }]
         );
-        assert!(r.heartbeat("proj", Timestamp::from_millis(200)).unwrap().is_empty());
+        assert!(r
+            .heartbeat("proj", Timestamp::from_millis(200))
+            .unwrap()
+            .is_empty());
     }
 
     #[test]
@@ -278,7 +288,13 @@ mod tests {
         assert!(r.check_heartbeats(Timestamp::from_millis(1_000)).is_empty());
         let events = r.check_heartbeats(Timestamp::from_millis(1_500));
         assert_eq!(events.len(), 2);
-        assert!(matches!(events[0], Event::HeartbeatMissed { missed_millis: 1_500, .. }));
+        assert!(matches!(
+            events[0],
+            Event::HeartbeatMissed {
+                missed_millis: 1_500,
+                ..
+            }
+        ));
         assert_eq!(r.health("proj"), Some(DeviceHealth::Offline));
         assert!(r.check_heartbeats(Timestamp::from_millis(9_000)).is_empty());
     }
@@ -286,7 +302,9 @@ mod tests {
     #[test]
     fn never_seen_devices_stay_unknown() {
         let mut r = registry();
-        assert!(r.check_heartbeats(Timestamp::from_millis(99_999)).is_empty());
+        assert!(r
+            .check_heartbeats(Timestamp::from_millis(99_999))
+            .is_empty());
         assert_eq!(r.health("proj"), Some(DeviceHealth::Unknown));
     }
 
@@ -303,8 +321,14 @@ mod tests {
     #[test]
     fn set_health_is_idempotent() {
         let mut r = registry();
-        assert!(r.set_health("proj", DeviceHealth::Degraded).unwrap().is_some());
-        assert!(r.set_health("proj", DeviceHealth::Degraded).unwrap().is_none());
+        assert!(r
+            .set_health("proj", DeviceHealth::Degraded)
+            .unwrap()
+            .is_some());
+        assert!(r
+            .set_health("proj", DeviceHealth::Degraded)
+            .unwrap()
+            .is_none());
         assert_eq!(r.worst_health(), DeviceHealth::Degraded);
     }
 

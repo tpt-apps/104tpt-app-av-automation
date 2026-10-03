@@ -93,10 +93,8 @@ impl TempDir {
     pub fn new(name: &str) -> Self {
         static COUNTER: AtomicU32 = AtomicU32::new(0);
         let n = COUNTER.fetch_add(1, Ordering::Relaxed);
-        let dir = std::env::temp_dir().join(format!(
-            "tpt-av-scenario-{name}-{}-{n}",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("tpt-av-scenario-{name}-{}-{n}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).expect("create scenario directory");
         Self(dir)
@@ -255,7 +253,10 @@ pub fn http_request(addr: &str, method: &str, path: &str, token: &str) -> (u16, 
     let Ok(mut stream) = std::net::TcpStream::connect(addr) else {
         return (0, String::new());
     };
-    if stream.set_read_timeout(Some(Duration::from_secs(5))).is_err() {
+    if stream
+        .set_read_timeout(Some(Duration::from_secs(5)))
+        .is_err()
+    {
         return (0, String::new());
     }
     let request = format!(

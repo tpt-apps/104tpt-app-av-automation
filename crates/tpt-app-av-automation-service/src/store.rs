@@ -76,7 +76,8 @@ impl Store {
     }
 
     fn init(conn: Connection) -> Result<Self> {
-        conn.busy_timeout(std::time::Duration::from_secs(5)).map_err(storage)?;
+        conn.busy_timeout(std::time::Duration::from_secs(5))
+            .map_err(storage)?;
         // WAL survives a killed process without corruption and keeps readers unblocked.
         let _: String = conn
             .query_row("PRAGMA journal_mode = WAL", [], |r| r.get(0))
@@ -122,7 +123,11 @@ impl Store {
         )
         .map_err(storage)?;
         let version: Option<String> = conn
-            .query_row("SELECT value FROM schema_meta WHERE key = 'version'", [], |r| r.get(0))
+            .query_row(
+                "SELECT value FROM schema_meta WHERE key = 'version'",
+                [],
+                |r| r.get(0),
+            )
             .optional()
             .map_err(storage)?;
         match version {
@@ -197,7 +202,11 @@ impl Store {
     pub fn load_pack_version(&self, id: i64) -> Result<Option<RulePack>> {
         let yaml: Option<String> = self
             .conn
-            .query_row("SELECT yaml FROM rule_packs WHERE id = ?1", params![id], |r| r.get(0))
+            .query_row(
+                "SELECT yaml FROM rule_packs WHERE id = ?1",
+                params![id],
+                |r| r.get(0),
+            )
             .optional()
             .map_err(storage)?;
         yaml.map(|y| RulePack::from_yaml_str(&y)).transpose()
@@ -297,7 +306,9 @@ impl Store {
     /// Total stored executions.
     pub fn execution_count(&self) -> Result<u64> {
         self.conn
-            .query_row("SELECT COUNT(*) FROM executions", [], |r| r.get::<_, i64>(0))
+            .query_row("SELECT COUNT(*) FROM executions", [], |r| {
+                r.get::<_, i64>(0)
+            })
             .map(|n| n as u64)
             .map_err(storage)
     }
@@ -314,7 +325,11 @@ impl Store {
     }
 
     /// Appends an incident to the incident log.
-    pub fn append_incident(&self, at_ms: u64, incident: &tpt_app_av_automation_actions::Incident) -> Result<()> {
+    pub fn append_incident(
+        &self,
+        at_ms: u64,
+        incident: &tpt_app_av_automation_actions::Incident,
+    ) -> Result<()> {
         self.conn
             .execute(
                 "INSERT INTO incidents (at_ms, rule_id, execution_id, severity, message)
@@ -357,7 +372,11 @@ impl Store {
     /// Reads a user preference.
     pub fn preference(&self, key: &str) -> Result<Option<String>> {
         self.conn
-            .query_row("SELECT value FROM preferences WHERE key = ?1", params![key], |r| r.get(0))
+            .query_row(
+                "SELECT value FROM preferences WHERE key = ?1",
+                params![key],
+                |r| r.get(0),
+            )
             .optional()
             .map_err(storage)
     }
@@ -390,10 +409,13 @@ impl Store {
     pub fn load_state(&self) -> Result<Option<EngineState>> {
         let json: Option<String> = self
             .conn
-            .query_row("SELECT json FROM engine_state WHERE id = 1", [], |r| r.get(0))
+            .query_row("SELECT json FROM engine_state WHERE id = 1", [], |r| {
+                r.get(0)
+            })
             .optional()
             .map_err(storage)?;
-        json.map(|j| serde_json::from_str(&j).map_err(json_err)).transpose()
+        json.map(|j| serde_json::from_str(&j).map_err(json_err))
+            .transpose()
     }
 }
 
@@ -405,7 +427,13 @@ mod tests {
 
     const PACK: &str = "format_version: 1\nname: P\nrevision: 1\nrules:\n  - id: r\n    name: R\n    trigger: { type: manual }\n    actions:\n      - { id: a, type: notify.operator, message: hi }\n";
 
-    fn record(id: &str, rule: &str, status: ExecutionStatus, at: u64, simulated: bool) -> ExecutionRecord {
+    fn record(
+        id: &str,
+        rule: &str,
+        status: ExecutionStatus,
+        at: u64,
+        simulated: bool,
+    ) -> ExecutionRecord {
         ExecutionRecord {
             execution_id: id.into(),
             rule_id: RuleId::new(rule),
@@ -427,7 +455,11 @@ mod tests {
         let store = Store::open_in_memory().unwrap();
         let pack = RulePack::from_yaml_str(PACK).unwrap();
         let first = store.save_pack(&pack, 1).unwrap();
-        assert_eq!(store.save_pack(&pack, 2).unwrap(), first, "unchanged pack is not a new version");
+        assert_eq!(
+            store.save_pack(&pack, 2).unwrap(),
+            first,
+            "unchanged pack is not a new version"
+        );
         let mut edited = pack.clone();
         edited.revision = 2;
         let second = store.save_pack(&edited, 3).unwrap();
@@ -455,28 +487,85 @@ mod tests {
     #[test]
     fn executions_are_filterable_and_newest_first() {
         let store = Store::open_in_memory().unwrap();
-        store.append_execution(&record("e1", "a", ExecutionStatus::Success, 100, false)).unwrap();
-        store.append_execution(&record("e2", "b", ExecutionStatus::Failed, 200, true)).unwrap();
-        store.append_execution(&record("e3", "a", ExecutionStatus::PartialFailure, 300, false)).unwrap();
+        store
+            .append_execution(&record("e1", "a", ExecutionStatus::Success, 100, false))
+            .unwrap();
+        store
+            .append_execution(&record("e2", "b", ExecutionStatus::Failed, 200, true))
+            .unwrap();
+        store
+            .append_execution(&record(
+                "e3",
+                "a",
+                ExecutionStatus::PartialFailure,
+                300,
+                false,
+            ))
+            .unwrap();
         let all = store.executions(&Filter::default(), 10).unwrap();
         let ids: Vec<_> = all.iter().map(|r| r.execution_id.as_str()).collect();
         assert_eq!(ids, ["e3", "e2", "e1"]);
-        let only_a = store.executions(&Filter { rule: Some("a".into()), ..Filter::default() }, 10).unwrap();
+        let only_a = store
+            .executions(
+                &Filter {
+                    rule: Some("a".into()),
+                    ..Filter::default()
+                },
+                10,
+            )
+            .unwrap();
         assert_eq!(only_a.len(), 2);
-        let failed = store.executions(&Filter { status: Some(ExecutionStatus::Failed), ..Filter::default() }, 10).unwrap();
+        let failed = store
+            .executions(
+                &Filter {
+                    status: Some(ExecutionStatus::Failed),
+                    ..Filter::default()
+                },
+                10,
+            )
+            .unwrap();
         assert_eq!(failed[0].execution_id, "e2");
-        let window = store.executions(&Filter { since_ms: Some(150), until_ms: Some(250), ..Filter::default() }, 10).unwrap();
+        let window = store
+            .executions(
+                &Filter {
+                    since_ms: Some(150),
+                    until_ms: Some(250),
+                    ..Filter::default()
+                },
+                10,
+            )
+            .unwrap();
         assert_eq!(window.len(), 1);
-        let sim = store.executions(&Filter { simulated: Some(true), ..Filter::default() }, 10).unwrap();
+        let sim = store
+            .executions(
+                &Filter {
+                    simulated: Some(true),
+                    ..Filter::default()
+                },
+                10,
+            )
+            .unwrap();
         assert_eq!(sim.len(), 1);
-        assert_eq!(store.executions(&Filter::default(), 2).unwrap().len(), 2, "limit honoured");
+        assert_eq!(
+            store.executions(&Filter::default(), 2).unwrap().len(),
+            2,
+            "limit honoured"
+        );
     }
 
     #[test]
     fn pruning_keeps_the_newest() {
         let store = Store::open_in_memory().unwrap();
         for i in 0..10 {
-            store.append_execution(&record(&format!("e{i}"), "a", ExecutionStatus::Success, i, false)).unwrap();
+            store
+                .append_execution(&record(
+                    &format!("e{i}"),
+                    "a",
+                    ExecutionStatus::Success,
+                    i,
+                    false,
+                ))
+                .unwrap();
         }
         assert_eq!(store.prune_executions(3).unwrap(), 7);
         assert_eq!(store.execution_count().unwrap(), 3);
@@ -490,7 +579,10 @@ mod tests {
         use tpt_app_av_automation_actions::Incident;
         use tpt_app_av_automation_model::AlertSeverity;
         let store = Store::open_in_memory().unwrap();
-        for (i, severity) in [AlertSeverity::Info, AlertSeverity::Critical].into_iter().enumerate() {
+        for (i, severity) in [AlertSeverity::Info, AlertSeverity::Critical]
+            .into_iter()
+            .enumerate()
+        {
             store
                 .append_incident(
                     100 + i as u64,
@@ -505,7 +597,14 @@ mod tests {
         }
         let all = store.incidents(10).unwrap();
         assert_eq!(all.len(), 2);
-        assert_eq!((all[0].message.as_str(), all[0].severity.as_str(), all[0].at_ms), ("m1", "critical", 101));
+        assert_eq!(
+            (
+                all[0].message.as_str(),
+                all[0].severity.as_str(),
+                all[0].at_ms
+            ),
+            ("m1", "critical", 101)
+        );
         assert_eq!(store.incidents(1).unwrap().len(), 1);
     }
 
@@ -518,9 +617,11 @@ mod tests {
         assert_eq!(store.preference("theme").unwrap().as_deref(), Some("light"));
 
         assert!(store.load_state().unwrap().is_none());
-        let mut state = EngineState::default();
-        state.next_execution = 42;
-        state.armed.insert("r".into(), true);
+        let state = EngineState {
+            next_execution: 42,
+            armed: [("r".to_string(), true)].into_iter().collect(),
+            ..EngineState::default()
+        };
         store.save_state(&state).unwrap();
         store.save_state(&state).unwrap();
         assert_eq!(store.load_state().unwrap().unwrap(), state);

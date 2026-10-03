@@ -34,10 +34,44 @@ impl Rng {
 }
 
 const TOKENS: &[&str] = &[
-    "- ", "  ", "\n", ": ", "[", "]", "{", "}", "\"", "'", "&a ", "*a", "!!str ", "---\n", "? ", "null",
-    "~", "true", "-1", "18446744073709551615", "1e999", "0x10", "\t", "\u{0}", "\u{feff}", "%", "|\n", ">\n",
-    "<<: ", "type: workflow.invoke_rule", "type: control.dmx_channels", "start_channel: 65535",
-    "values: [", "rule: self", "armed: true", "id: ", "timeout_ms: 0", "at: \"99:99\"",
+    "- ",
+    "  ",
+    "\n",
+    ": ",
+    "[",
+    "]",
+    "{",
+    "}",
+    "\"",
+    "'",
+    "&a ",
+    "*a",
+    "!!str ",
+    "---\n",
+    "? ",
+    "null",
+    "~",
+    "true",
+    "-1",
+    "18446744073709551615",
+    "1e999",
+    "0x10",
+    "\t",
+    "\u{0}",
+    "\u{feff}",
+    "%",
+    "|\n",
+    ">\n",
+    "<<: ",
+    "type: workflow.invoke_rule",
+    "type: control.dmx_channels",
+    "start_channel: 65535",
+    "values: [",
+    "rule: self",
+    "armed: true",
+    "id: ",
+    "timeout_ms: 0",
+    "at: \"99:99\"",
 ];
 
 fn mutate(rng: &mut Rng, seed: &[u8]) -> Vec<u8> {
@@ -93,13 +127,18 @@ fn mutate(rng: &mut Rng, seed: &[u8]) -> Vec<u8> {
 
 fn seed_packs() -> Vec<String> {
     let mut packs = Vec::new();
-    let mut paths: Vec<PathBuf> = discover("golden").into_iter().map(|d| d.join("pack.yaml")).collect();
+    let mut paths: Vec<PathBuf> = discover("golden")
+        .into_iter()
+        .map(|d| d.join("pack.yaml"))
+        .collect();
     let rules = fixtures_root().join("../../rules");
     for sub in ["examples", "live-event", "failover"] {
         if let Ok(entries) = std::fs::read_dir(rules.join(sub)) {
             for e in entries.flatten() {
                 let p = e.path();
-                if p.extension().is_some_and(|x| x == "yaml") && p.file_name().is_some_and(|n| n != "devices.yaml") {
+                if p.extension().is_some_and(|x| x == "yaml")
+                    && p.file_name().is_some_and(|n| n != "devices.yaml")
+                {
                     paths.push(p);
                 }
             }
@@ -124,8 +163,13 @@ fn run_in_engine(pack: RulePack) {
         mode: Mode::Simulation,
         ..EngineConfig::default()
     };
-    let Ok(mut engine) = Engine::new(pack, registry, Actions::with_defaults(), Arc::new(FixedClock::default()), config)
-    else {
+    let Ok(mut engine) = Engine::new(
+        pack,
+        registry,
+        Actions::with_defaults(),
+        Arc::new(FixedClock::default()),
+        config,
+    ) else {
         return;
     };
     for event in [
@@ -134,7 +178,9 @@ fn run_in_engine(pack: RulePack) {
             address: "/go".into(),
             args: vec![1.0],
         },
-        Event::Schedule { spec: "18:55".into() },
+        Event::Schedule {
+            spec: "18:55".into(),
+        },
     ] {
         let _ = engine.handle_event(event);
     }
@@ -144,7 +190,11 @@ fn run_in_engine(pack: RulePack) {
 #[test]
 fn mutated_rule_packs_never_panic_the_parser_validator_or_engine() {
     let seeds = seed_packs();
-    assert!(seeds.len() >= 10, "seed corpus is missing ({} packs)", seeds.len());
+    assert!(
+        seeds.len() >= 10,
+        "seed corpus is missing ({} packs)",
+        seeds.len()
+    );
     let mut rng = Rng(0x9E37_79B9_7F4A_7C15);
     let (mut parsed, mut rejected) = (0u32, 0u32);
     for round in 0..4000 {
@@ -179,7 +229,13 @@ fn pathological_documents_are_rejected_not_fatal() {
         }
         s
     };
-    for doc in [deep_seq.as_str(), deep_map.as_str(), huge_scalar.as_str(), "\u{0}\u{0}\u{0}", "&a [*a, *a]"] {
+    for doc in [
+        deep_seq.as_str(),
+        deep_map.as_str(),
+        huge_scalar.as_str(),
+        "\u{0}\u{0}\u{0}",
+        "&a [*a, *a]",
+    ] {
         let _ = RulePack::from_yaml_str(doc);
     }
     let big = RulePack::from_yaml_str(&many_rules).expect("2000 small rules are legitimate");

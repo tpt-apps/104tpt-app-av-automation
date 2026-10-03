@@ -355,7 +355,7 @@ rules:
     actions:
       - { id: a1, type: notify.operator, message: hi }
 "#;
-    let locations: Vec<_> = expect_invalid(&yaml)
+    let locations: Vec<_> = expect_invalid(yaml)
         .into_iter()
         .map(|d| d.location)
         .collect();

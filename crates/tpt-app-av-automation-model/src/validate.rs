@@ -256,9 +256,7 @@ fn validate_trigger(
                 if !site.is_some_and(|s| s.is_valid()) {
                     diagnostics.push(Diagnostic::error(
                         format!("{base}.site"),
-                        format!(
-                            "a `solar` schedule needs a pack-level `site` with a valid latitude (-90 to 90) and longitude (-180 to 180)"
-                        ),
+                        "a `solar` schedule needs a pack-level `site` with a valid latitude (-90 to 90) and longitude (-180 to 180)".to_string(),
                     ));
                 }
                 // An offset of more than a day cannot be meant: it would schedule a time on the

@@ -815,14 +815,15 @@ impl Trigger {
     /// Such triggers cannot fire on their very first observation without a recorded previous
     /// value; callers seed `dmx_previous` from the device registry.
     pub fn needs_previous_dmx(&self) -> bool {
-        match self.spec {
+        matches!(
+            self.spec,
             TriggerSpec::Dmx {
-                comparison:
-                    DmxComparison::Changed | DmxComparison::CrossedAbove | DmxComparison::CrossedBelow,
+                comparison: DmxComparison::Changed
+                    | DmxComparison::CrossedAbove
+                    | DmxComparison::CrossedBelow,
                 ..
-            } => true,
-            _ => false,
-        }
+            }
+        )
     }
 }
 

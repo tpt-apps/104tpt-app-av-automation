@@ -22,7 +22,8 @@ fn play(pack: &str, devices: &str, script: &str) -> Replay {
     .unwrap()
 }
 
-const DEVICES: &str = "devices:\n  - { id: dev, protocol: virtual }\n  - { id: other, protocol: virtual }\n";
+const DEVICES: &str =
+    "devices:\n  - { id: dev, protocol: virtual }\n  - { id: other, protocol: virtual }\n";
 
 #[test]
 fn a_device_dropping_out_mid_chain_yields_a_partial_failure_not_a_success() {
@@ -54,8 +55,16 @@ steps:
     );
     let record = &r.records[0];
     assert_eq!(record.overall_status, ExecutionStatus::PartialFailure);
-    let outcomes: Vec<_> = record.action_results.iter().map(|a| a.outcome.is_success()).collect();
-    assert_eq!(outcomes, [true, false, false, true], "the device died after one message; the other device was unaffected");
+    let outcomes: Vec<_> = record
+        .action_results
+        .iter()
+        .map(|a| a.outcome.is_success())
+        .collect();
+    assert_eq!(
+        outcomes,
+        [true, false, false, true],
+        "the device died after one message; the other device was unaffected"
+    );
     assert_eq!(r.sent["dev"], ["osc /1 = 1"]);
     assert_eq!(r.sent["other"], ["osc /4 = 1"]);
 }
@@ -85,7 +94,9 @@ rules:
     assert_eq!(record.overall_status, ExecutionStatus::PartialFailure);
     assert!(record.action_results[0].outcome.is_success());
     assert!(record.action_results[1].outcome.is_failure());
-    assert!(matches!(&record.action_results[2].outcome, ActionOutcome::Skipped { reason } if reason.contains("two")));
+    assert!(
+        matches!(&record.action_results[2].outcome, ActionOutcome::Skipped { reason } if reason.contains("two"))
+    );
     assert!(r.sent["other"].is_empty());
 }
 
@@ -110,7 +121,10 @@ rules:
         "steps:\n  - fault: { device: dev, delay_ms: 600 }\n  - event: { kind: manual, rule: null }\n",
     );
     let record = &r.records[0];
-    assert!(matches!(record.action_results[0].outcome, ActionOutcome::TimedOut { after_ms: 40 }));
+    assert!(matches!(
+        record.action_results[0].outcome,
+        ActionOutcome::TimedOut { after_ms: 40 }
+    ));
     assert!(record.action_results[1].outcome.is_skipped());
     assert_eq!(record.overall_status, ExecutionStatus::Failed);
     // (The abandoned worker may still complete later, exactly as a late packet would on a real
@@ -136,7 +150,10 @@ rules:
         DEVICES,
         "steps:\n  - fault: { device: dev, timeout: true }\n  - event: { kind: manual, rule: null }\n",
     );
-    assert!(matches!(r.records[0].action_results[0].outcome, ActionOutcome::TimedOut { .. }));
+    assert!(matches!(
+        r.records[0].action_results[0].outcome,
+        ActionOutcome::TimedOut { .. }
+    ));
 }
 
 #[test]
@@ -170,7 +187,10 @@ rules:
     assert_eq!(r.records[1].overall_status, ExecutionStatus::Success);
     assert!(matches!(
         r.records[1].trigger_detail,
-        Event::DeviceState { current: DeviceHealth::Degraded, .. }
+        Event::DeviceState {
+            current: DeviceHealth::Degraded,
+            ..
+        }
     ));
     assert_eq!(r.sent["other"], ["osc /backup = 1"]);
 }
@@ -217,8 +237,15 @@ steps:
     );
     // Each failure only degrades a device that was Online, so the loop ends on its own after one
     // round; the point is that it terminates with a bounded, fully recorded trace.
-    assert!(r.records.len() <= 64, "unbounded cascade: {} records", r.records.len());
-    assert!(r.records.iter().all(|x| x.overall_status != ExecutionStatus::Success));
+    assert!(
+        r.records.len() <= 64,
+        "unbounded cascade: {} records",
+        r.records.len()
+    );
+    assert!(r
+        .records
+        .iter()
+        .all(|x| x.overall_status != ExecutionStatus::Success));
 }
 
 #[test]
@@ -270,10 +297,21 @@ fn sustained_event_load_is_processed_and_history_stays_bounded() {
     eprintln!(
         "{events} events -> {fired} executions in {elapsed:?} ({:.0} events/s, {} build)",
         events as f64 / elapsed.as_secs_f64(),
-        if cfg!(debug_assertions) { "debug" } else { "release" }
+        if cfg!(debug_assertions) {
+            "debug"
+        } else {
+            "release"
+        }
     );
-    assert_eq!(fired, events / 2, "half the events address one of the 20 rules");
+    assert_eq!(
+        fired,
+        events / 2,
+        "half the events address one of the 20 rules"
+    );
     assert_eq!(engine.history().count(), 1000, "history is capped");
     assert_eq!(endpoint.sent().len(), fired);
-    assert!(elapsed.as_secs() < 60, "engine is unreasonably slow: {elapsed:?}");
+    assert!(
+        elapsed.as_secs() < 60,
+        "engine is unreasonably slow: {elapsed:?}"
+    );
 }

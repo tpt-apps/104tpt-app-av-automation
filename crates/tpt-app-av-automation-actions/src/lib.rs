@@ -157,7 +157,9 @@ impl Actions {
                 ActionSpec::Wait { ms } => format!("workflow.wait {ms}ms"),
                 ActionSpec::InvokeRule { rule } => format!("workflow.invoke_rule `{rule}`"),
                 ActionSpec::Exec { program, args, .. } => {
-                    format!("workflow.exec {program} {}", args.join(" ")).trim_end().to_string()
+                    format!("workflow.exec {program} {}", args.join(" "))
+                        .trim_end()
+                        .to_string()
                 }
                 other => other.type_label().to_string(),
             },

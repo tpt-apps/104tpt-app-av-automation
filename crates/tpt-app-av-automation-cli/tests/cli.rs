@@ -40,11 +40,17 @@ impl Drop for TempDir {
 }
 
 fn cli(args: &[&str]) -> Output {
-    Command::new(BIN).args(args).output().expect("failed to run the CLI")
+    Command::new(BIN)
+        .args(args)
+        .output()
+        .expect("failed to run the CLI")
 }
 
 fn code(output: &Output) -> i32 {
-    output.status.code().expect("process was killed by a signal")
+    output
+        .status
+        .code()
+        .expect("process was killed by a signal")
 }
 
 fn stdout(output: &Output) -> String {
@@ -67,11 +73,19 @@ fn wait_until(what: &str, timeout: Duration, mut condition: impl FnMut() -> bool
 }
 
 fn free_udp_port() -> u16 {
-    UdpSocket::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port()
+    UdpSocket::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port()
 }
 
 fn free_tcp_port() -> u16 {
-    TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port()
+    TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port()
 }
 
 fn kill_pid(pid: u32) {
@@ -175,8 +189,18 @@ fn validate_rejects_bad_configuration_with_exit_code_4() {
     assert!(stderr(&out).contains("duplicate"), "{}", stderr(&out));
 
     let garbage = dir.write("garbage.yaml", ": : [");
-    assert_eq!(code(&cli(&["validate", "--rules", garbage.to_str().unwrap()])), 4);
-    assert_eq!(code(&cli(&["validate", "--rules", dir.path().join("missing.yaml").to_str().unwrap()])), 4);
+    assert_eq!(
+        code(&cli(&["validate", "--rules", garbage.to_str().unwrap()])),
+        4
+    );
+    assert_eq!(
+        code(&cli(&[
+            "validate",
+            "--rules",
+            dir.path().join("missing.yaml").to_str().unwrap()
+        ])),
+        4
+    );
 
     // A rule that targets a device the device file does not define.
     let pack_file = dir.write("pack.yaml", &pack(false));
@@ -196,7 +220,13 @@ fn validate_rejects_bad_configuration_with_exit_code_4() {
 fn validate_json_is_machine_readable() {
     let dir = TempDir::new("validate-json");
     let pack_file = dir.write("pack.yaml", &pack(false));
-    let out = cli(&["validate", "--rules", pack_file.to_str().unwrap(), "--format", "json"]);
+    let out = cli(&[
+        "validate",
+        "--rules",
+        pack_file.to_str().unwrap(),
+        "--format",
+        "json",
+    ]);
     assert_eq!(code(&out), 0);
     let v: Value = serde_json::from_str(&stdout(&out)).unwrap();
     assert_eq!(v["valid"], true);
@@ -207,7 +237,10 @@ fn validate_json_is_machine_readable() {
 fn validate_checks_the_service_config_too() {
     let dir = TempDir::new("validate-config");
     let pack_file = dir.write("pack.yaml", &pack(false));
-    let config = dir.write("service.yaml", "api:\n  enabled: true\n  bind: 0.0.0.0:8787\n");
+    let config = dir.write(
+        "service.yaml",
+        "api:\n  enabled: true\n  bind: 0.0.0.0:8787\n",
+    );
     let out = cli(&[
         "validate",
         "--rules",
@@ -216,7 +249,11 @@ fn validate_checks_the_service_config_too() {
         config.to_str().unwrap(),
     ]);
     assert_eq!(code(&out), 4);
-    assert!(stderr(&out).contains("api.token") && stderr(&out).contains("api.bind"), "{}", stderr(&out));
+    assert!(
+        stderr(&out).contains("api.token") && stderr(&out).contains("api.bind"),
+        "{}",
+        stderr(&out)
+    );
 }
 
 // --- simulate -----------------------------------------------------------------------------------
@@ -225,10 +262,19 @@ fn validate_checks_the_service_config_too() {
 fn simulate_reports_what_would_happen_and_exits_zero() {
     let dir = TempDir::new("simulate");
     let pack_file = dir.write("pack.yaml", &pack(false));
-    let out = cli(&["simulate", "--rules", pack_file.to_str().unwrap(), "--event", "osc:/go"]);
+    let out = cli(&[
+        "simulate",
+        "--rules",
+        pack_file.to_str().unwrap(),
+        "--event",
+        "osc:/go",
+    ]);
     assert_eq!(code(&out), 0, "{}", stderr(&out));
     let text = stdout(&out);
-    assert!(text.starts_with("SIMULATION — no live actions were sent"), "{text}");
+    assert!(
+        text.starts_with("SIMULATION — no live actions were sent"),
+        "{text}"
+    );
     assert!(text.contains("Would execute:"), "{text}");
     assert!(text.contains("osc /projector/power = 1 -> proj"), "{text}");
 }
@@ -238,13 +284,53 @@ fn simulate_exit_codes_distinguish_skipped_and_bad_input() {
     let dir = TempDir::new("simulate-codes");
     let pack_file = dir.write("pack.yaml", &pack(false));
     let rules = pack_file.to_str().unwrap();
-    assert_eq!(code(&cli(&["simulate", "--rules", rules, "--event", "osc:/other"])), 3, "nothing matched");
-    assert_eq!(code(&cli(&["simulate", "--rules", rules, "--event", "bogus"])), 4);
-    assert_eq!(code(&cli(&["simulate", "--rules", rules, "--event", "osc:/go", "--health", "proj=sideways"])), 4);
+    assert_eq!(
+        code(&cli(&[
+            "simulate",
+            "--rules",
+            rules,
+            "--event",
+            "osc:/other"
+        ])),
+        3,
+        "nothing matched"
+    );
+    assert_eq!(
+        code(&cli(&["simulate", "--rules", rules, "--event", "bogus"])),
+        4
+    );
+    assert_eq!(
+        code(&cli(&[
+            "simulate",
+            "--rules",
+            rules,
+            "--event",
+            "osc:/go",
+            "--health",
+            "proj=sideways"
+        ])),
+        4
+    );
     // `fire_on_unknown` only opts in to *unknown* state: a device known to be offline still blocks.
-    let blocked = cli(&["simulate", "--rules", rules, "--event", "osc:/go", "--health", "proj=offline"]);
+    let blocked = cli(&[
+        "simulate",
+        "--rules",
+        rules,
+        "--event",
+        "osc:/go",
+        "--health",
+        "proj=offline",
+    ]);
     assert_eq!(code(&blocked), 3);
-    let allowed = cli(&["simulate", "--rules", rules, "--event", "osc:/go", "--health", "proj=online"]);
+    let allowed = cli(&[
+        "simulate",
+        "--rules",
+        rules,
+        "--event",
+        "osc:/go",
+        "--health",
+        "proj=online",
+    ]);
     assert_eq!(code(&allowed), 0);
 }
 
@@ -252,7 +338,15 @@ fn simulate_exit_codes_distinguish_skipped_and_bad_input() {
 fn simulate_json_matches_the_documented_shape() {
     let dir = TempDir::new("simulate-json");
     let pack_file = dir.write("pack.yaml", &pack(false));
-    let out = cli(&["simulate", "--rules", pack_file.to_str().unwrap(), "--event", "osc:/go", "--format", "json"]);
+    let out = cli(&[
+        "simulate",
+        "--rules",
+        pack_file.to_str().unwrap(),
+        "--event",
+        "osc:/go",
+        "--format",
+        "json",
+    ]);
     let v: Value = serde_json::from_str(&stdout(&out)).unwrap();
     let first = &v[0];
     assert_eq!(first["rule"], "Cue");
@@ -261,15 +355,28 @@ fn simulate_json_matches_the_documented_shape() {
     assert_eq!(first["actions_failed"], 0);
     assert_eq!(first["simulated"], true);
 
-    let trace = cli(&["simulate", "--rules", pack_file.to_str().unwrap(), "--event", "osc:/go", "--format", "trace"]);
+    let trace = cli(&[
+        "simulate",
+        "--rules",
+        pack_file.to_str().unwrap(),
+        "--event",
+        "osc:/go",
+        "--format",
+        "trace",
+    ]);
     let full: Value = serde_json::from_str(&stdout(&trace)).unwrap();
-    assert_eq!(full[0]["action_results"][0]["detail"], "osc /projector/power = 1 -> proj");
+    assert_eq!(
+        full[0]["action_results"][0]["detail"],
+        "osc /projector/power = 1 -> proj"
+    );
 }
 
 #[test]
 fn simulation_never_sends_a_real_control_message_even_for_armed_rules() {
     let receiver = UdpSocket::bind("127.0.0.1:0").unwrap();
-    receiver.set_read_timeout(Some(Duration::from_millis(600))).unwrap();
+    receiver
+        .set_read_timeout(Some(Duration::from_millis(600)))
+        .unwrap();
     let port = receiver.local_addr().unwrap().port();
 
     let dir = TempDir::new("simulate-silent");
@@ -286,7 +393,10 @@ fn simulation_never_sends_a_real_control_message_even_for_armed_rules() {
     ]);
     assert_eq!(code(&out), 0);
     let mut buf = [0u8; 512];
-    assert!(receiver.recv(&mut buf).is_err(), "a datagram reached the device during a simulation");
+    assert!(
+        receiver.recv(&mut buf).is_err(),
+        "a datagram reached the device during a simulation"
+    );
 }
 
 #[test]
@@ -318,7 +428,9 @@ fn simulate_sequences_share_state_between_events() {
 #[test]
 fn an_armed_rule_turns_an_inbound_osc_message_into_an_outbound_one() {
     let receiver = UdpSocket::bind("127.0.0.1:0").unwrap();
-    receiver.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
+    receiver
+        .set_read_timeout(Some(Duration::from_secs(10)))
+        .unwrap();
     let device_port = receiver.local_addr().unwrap().port();
     let listen_port = free_udp_port();
 
@@ -327,7 +439,9 @@ fn an_armed_rule_turns_an_inbound_osc_message_into_an_outbound_one() {
     let devices_file = dir.write("devices.yaml", &devices(device_port));
     let config = dir.write(
         "service.yaml",
-        &format!("tick_ms: 20\nlisteners:\n  - {{ protocol: osc, bind: '127.0.0.1:{listen_port}' }}\n"),
+        &format!(
+            "tick_ms: 20\nlisteners:\n  - {{ protocol: osc, bind: '127.0.0.1:{listen_port}' }}\n"
+        ),
     );
     let state = dir.path().join("state");
 
@@ -357,7 +471,9 @@ fn an_armed_rule_turns_an_inbound_osc_message_into_an_outbound_one() {
     let mut received = None;
     let mut buf = [0u8; 512];
     let deadline = Instant::now() + Duration::from_secs(20);
-    receiver.set_read_timeout(Some(Duration::from_millis(200))).unwrap();
+    receiver
+        .set_read_timeout(Some(Duration::from_millis(200)))
+        .unwrap();
     while Instant::now() < deadline && received.is_none() {
         let _ = sender.send_to(&go, ("127.0.0.1", listen_port));
         if let Ok(n) = receiver.recv(&mut buf) {
@@ -370,11 +486,27 @@ fn an_armed_rule_turns_an_inbound_osc_message_into_an_outbound_one() {
     assert_eq!(message.arguments, vec![OscArg::Int(1)]);
 
     // The execution was logged with its detail, and `history` can show it.
-    wait_until("the execution to be persisted", Duration::from_secs(10), || {
-        let out = cli(&["history", "--state-dir", state.to_str().unwrap(), "--format", "json"]);
-        code(&out) == 0 && stdout(&out).contains("\"status\":\"success\"")
-    });
-    let out = cli(&["history", "--state-dir", state.to_str().unwrap(), "--format", "trace"]);
+    wait_until(
+        "the execution to be persisted",
+        Duration::from_secs(10),
+        || {
+            let out = cli(&[
+                "history",
+                "--state-dir",
+                state.to_str().unwrap(),
+                "--format",
+                "json",
+            ]);
+            code(&out) == 0 && stdout(&out).contains("\"status\":\"success\"")
+        },
+    );
+    let out = cli(&[
+        "history",
+        "--state-dir",
+        state.to_str().unwrap(),
+        "--format",
+        "trace",
+    ]);
     let records: Value = serde_json::from_str(&stdout(&out)).unwrap();
     assert_eq!(records[0]["rule_id"], "cue");
     assert_eq!(records[0]["simulated"], false);
@@ -394,7 +526,14 @@ fn run_refuses_a_pack_whose_devices_are_undefined() {
 #[test]
 fn history_without_a_database_is_a_configuration_error() {
     let dir = TempDir::new("history-missing");
-    assert_eq!(code(&cli(&["history", "--state-dir", dir.path().to_str().unwrap()])), 4);
+    assert_eq!(
+        code(&cli(&[
+            "history",
+            "--state-dir",
+            dir.path().to_str().unwrap()
+        ])),
+        4
+    );
 }
 
 // --- chaos: watchdog ----------------------------------------------------------------------------
@@ -404,7 +543,10 @@ fn health(port: u16) -> Option<Value> {
     stream.set_read_timeout(Some(Duration::from_secs(2))).ok()?;
     stream
         .write_all(
-            format!("GET /health HTTP/1.1\r\nHost: 127.0.0.1\r\nAuthorization: Bearer {TOKEN}\r\n\r\n").as_bytes(),
+            format!(
+                "GET /health HTTP/1.1\r\nHost: 127.0.0.1\r\nAuthorization: Bearer {TOKEN}\r\n\r\n"
+            )
+            .as_bytes(),
         )
         .ok()?;
     let mut raw = String::new();
@@ -454,15 +596,22 @@ fn the_watchdog_restarts_a_forcibly_killed_engine() {
             .unwrap(),
     };
 
-    wait_until("the engine to come up", Duration::from_secs(30), || health(api_port).is_some());
+    wait_until("the engine to come up", Duration::from_secs(30), || {
+        health(api_port).is_some()
+    });
     let first_pid = read_pid(&pid_file).expect("engine pid file");
 
     // Chaos: kill the engine process outright, mid-flight.
     kill_pid(first_pid);
 
-    wait_until("the watchdog to bring the engine back", Duration::from_secs(30), || {
-        matches!(read_pid(&pid_file), Some(pid) if pid != first_pid) && health(api_port).is_some()
-    });
+    wait_until(
+        "the watchdog to bring the engine back",
+        Duration::from_secs(30),
+        || {
+            matches!(read_pid(&pid_file), Some(pid) if pid != first_pid)
+                && health(api_port).is_some()
+        },
+    );
     let second_pid = read_pid(&pid_file).unwrap();
     assert_ne!(first_pid, second_pid, "a new process, not the old one");
     let v = health(api_port).unwrap();

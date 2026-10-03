@@ -103,8 +103,14 @@ pub fn describe_event(event: &Event) -> String {
             let args: Vec<String> = args.iter().map(f64::to_string).collect();
             format!("osc {address} [{}]", args.join(", "))
         }
-        Event::Midi(m) => format!("midi {} ch{} #{} = {}", m.kind, m.channel, m.number, m.value),
-        Event::Dmx(d) => format!("dmx universe {} channel {} = {}", d.universe, d.channel, d.value),
+        Event::Midi(m) => format!(
+            "midi {} ch{} #{} = {}",
+            m.kind, m.channel, m.number, m.value
+        ),
+        Event::Dmx(d) => format!(
+            "dmx universe {} channel {} = {}",
+            d.universe, d.channel, d.value
+        ),
         Event::DeviceState {
             device,
             previous,
@@ -143,7 +149,11 @@ pub fn render_record(record: &ExecutionRecord) -> String {
         writeln!(out, "LIVE — actions were sent to devices")
     };
     let _ = writeln!(out);
-    let _ = writeln!(out, "Rule: \"{}\" (v{}, {})", record.rule_name, record.rule_version, record.execution_id);
+    let _ = writeln!(
+        out,
+        "Rule: \"{}\" (v{}, {})",
+        record.rule_name, record.rule_version, record.execution_id
+    );
     let _ = writeln!(
         out,
         "Trigger: {} ({})",
@@ -152,7 +162,11 @@ pub fn render_record(record: &ExecutionRecord) -> String {
     );
 
     if record.condition_results.is_empty() {
-        let verdict = if record.simulated { "would have fired" } else { "fired" };
+        let verdict = if record.simulated {
+            "would have fired"
+        } else {
+            "fired"
+        };
         let _ = writeln!(out, "Conditions: none configured — {verdict}");
     } else {
         let _ = writeln!(out, "Conditions:");
@@ -163,7 +177,11 @@ pub fn render_record(record: &ExecutionRecord) -> String {
                 ConditionResult::Unknown => "UNKNOWN",
             };
             let observed = c.observed.as_deref().unwrap_or("");
-            let blocked = if c.permits { "" } else { "  <- blocked the rule" };
+            let blocked = if c.permits {
+                ""
+            } else {
+                "  <- blocked the rule"
+            };
             let _ = writeln!(out, "  [{result}] {}: {observed}{blocked}", c.condition_id);
         }
     }
@@ -175,18 +193,36 @@ pub fn render_record(record: &ExecutionRecord) -> String {
     }
 
     let _ = writeln!(out);
-    let _ = writeln!(out, "{}:", if record.simulated { "Would execute" } else { "Executed" });
+    let _ = writeln!(
+        out,
+        "{}:",
+        if record.simulated {
+            "Would execute"
+        } else {
+            "Executed"
+        }
+    );
     for (i, step) in record.action_results.iter().enumerate() {
-        let what = step.detail.clone().unwrap_or_else(|| step.action_type.clone());
+        let what = step
+            .detail
+            .clone()
+            .unwrap_or_else(|| step.action_type.clone());
         if record.simulated && step.outcome.is_success() {
             let _ = writeln!(out, "  {}. {what}", i + 1);
         } else {
             let extra = match &step.outcome {
-                ActionOutcome::Failed { reason } | ActionOutcome::Skipped { reason } => format!(": {reason}"),
+                ActionOutcome::Failed { reason } | ActionOutcome::Skipped { reason } => {
+                    format!(": {reason}")
+                }
                 ActionOutcome::TimedOut { after_ms } => format!(" after {after_ms}ms"),
                 ActionOutcome::Success => String::new(),
             };
-            let _ = writeln!(out, "  {}. {what} [{}{extra}]", i + 1, outcome_tag(&step.outcome));
+            let _ = writeln!(
+                out,
+                "  {}. {what} [{}{extra}]",
+                i + 1,
+                outcome_tag(&step.outcome)
+            );
         }
     }
     let _ = writeln!(out);
@@ -221,7 +257,9 @@ pub struct Filter {
 impl Filter {
     /// Whether a record passes every filter.
     pub fn matches(&self, record: &ExecutionRecord) -> bool {
-        self.rule.as_deref().is_none_or(|r| record.rule_id.as_str() == r)
+        self.rule
+            .as_deref()
+            .is_none_or(|r| record.rule_id.as_str() == r)
             && self.status.is_none_or(|s| record.overall_status == s)
             && self.device.as_deref().is_none_or(|d| {
                 record
@@ -235,7 +273,10 @@ impl Filter {
     }
 
     /// Applies the filter to a sequence of records.
-    pub fn apply<'a>(&self, records: impl IntoIterator<Item = &'a ExecutionRecord>) -> Vec<&'a ExecutionRecord> {
+    pub fn apply<'a>(
+        &self,
+        records: impl IntoIterator<Item = &'a ExecutionRecord>,
+    ) -> Vec<&'a ExecutionRecord> {
         records.into_iter().filter(|r| self.matches(r)).collect()
     }
 }
@@ -246,7 +287,12 @@ mod tests {
     use tpt_app_av_automation_core::RuleId;
     use tpt_app_av_automation_model::{ActionResultRecord, ConditionResultRecord, FailurePolicy};
 
-    fn step(id: &str, device: Option<&str>, outcome: ActionOutcome, simulated: bool) -> ActionResultRecord {
+    fn step(
+        id: &str,
+        device: Option<&str>,
+        outcome: ActionOutcome,
+        simulated: bool,
+    ) -> ActionResultRecord {
         ActionResultRecord {
             action_id: id.into(),
             action_type: "control.osc".into(),
@@ -259,7 +305,11 @@ mod tests {
         }
     }
 
-    fn record(status: ExecutionStatus, simulated: bool, steps: Vec<ActionResultRecord>) -> ExecutionRecord {
+    fn record(
+        status: ExecutionStatus,
+        simulated: bool,
+        steps: Vec<ActionResultRecord>,
+    ) -> ExecutionRecord {
         ExecutionRecord {
             execution_id: "exec-000001".into(),
             rule_id: RuleId::new("main"),
@@ -299,17 +349,35 @@ mod tests {
         assert_eq!(exit_code(&[]), ExitCode::Skipped);
         assert_eq!(exit_code(std::slice::from_ref(&skipped)), ExitCode::Skipped);
         assert_eq!(exit_code(&[ok.clone(), skipped]), ExitCode::Success);
-        assert_eq!(exit_code(&[ok.clone(), partial.clone()]), ExitCode::PartialFailure);
+        assert_eq!(
+            exit_code(&[ok.clone(), partial.clone()]),
+            ExitCode::PartialFailure
+        );
         assert_eq!(exit_code(&[ok, partial, failed]), ExitCode::Failed);
     }
 
     #[test]
     fn errors_map_to_configuration_device_or_internal() {
-        assert_eq!(ExitCode::from_error(&Error::Parse("x".into())), ExitCode::ConfigurationError);
-        assert_eq!(ExitCode::from_error(&Error::Io("x".into())), ExitCode::ConfigurationError);
-        assert_eq!(ExitCode::from_error(&Error::Control("x".into())), ExitCode::DeviceError);
-        assert_eq!(ExitCode::from_error(&Error::Storage("x".into())), ExitCode::InternalError);
-        assert_eq!(ExitCode::from_error(&Error::Internal("x".into())), ExitCode::InternalError);
+        assert_eq!(
+            ExitCode::from_error(&Error::Parse("x".into())),
+            ExitCode::ConfigurationError
+        );
+        assert_eq!(
+            ExitCode::from_error(&Error::Io("x".into())),
+            ExitCode::ConfigurationError
+        );
+        assert_eq!(
+            ExitCode::from_error(&Error::Control("x".into())),
+            ExitCode::DeviceError
+        );
+        assert_eq!(
+            ExitCode::from_error(&Error::Storage("x".into())),
+            ExitCode::InternalError
+        );
+        assert_eq!(
+            ExitCode::from_error(&Error::Internal("x".into())),
+            ExitCode::InternalError
+        );
     }
 
     #[test]
@@ -319,8 +387,18 @@ mod tests {
             false,
             vec![
                 step("a", Some("d"), ActionOutcome::Success, false),
-                step("b", Some("d"), ActionOutcome::Failed { reason: "x".into() }, false),
-                step("c", None, ActionOutcome::Skipped { reason: "y".into() }, false),
+                step(
+                    "b",
+                    Some("d"),
+                    ActionOutcome::Failed { reason: "x".into() },
+                    false,
+                ),
+                step(
+                    "c",
+                    None,
+                    ActionOutcome::Skipped { reason: "y".into() },
+                    false,
+                ),
             ],
         );
         let v = machine_result(&r);
@@ -357,7 +435,12 @@ mod tests {
             false,
             vec![
                 step("a", Some("d"), ActionOutcome::Success, false),
-                step("b", Some("d"), ActionOutcome::TimedOut { after_ms: 50 }, false),
+                step(
+                    "b",
+                    Some("d"),
+                    ActionOutcome::TimedOut { after_ms: 50 },
+                    false,
+                ),
             ],
         );
         let text = render_record(&r);
@@ -392,12 +475,60 @@ mod tests {
         b.triggered_at_ms = 5_000;
         let all = [a.clone(), b.clone()];
         assert_eq!(Filter::default().apply(&all).len(), 2);
-        assert_eq!(Filter { rule: Some("main".into()), ..Filter::default() }.apply(&all).len(), 1);
-        assert_eq!(Filter { status: Some(ExecutionStatus::Failed), ..Filter::default() }.apply(&all).len(), 1);
-        assert_eq!(Filter { device: Some("proj".into()), ..Filter::default() }.apply(&all).len(), 1);
-        assert_eq!(Filter { since_ms: Some(2_000), ..Filter::default() }.apply(&all).len(), 1);
-        assert_eq!(Filter { until_ms: Some(2_000), ..Filter::default() }.apply(&all).len(), 1);
-        assert_eq!(Filter { simulated: Some(true), ..Filter::default() }.apply(&all).len(), 1);
+        assert_eq!(
+            Filter {
+                rule: Some("main".into()),
+                ..Filter::default()
+            }
+            .apply(&all)
+            .len(),
+            1
+        );
+        assert_eq!(
+            Filter {
+                status: Some(ExecutionStatus::Failed),
+                ..Filter::default()
+            }
+            .apply(&all)
+            .len(),
+            1
+        );
+        assert_eq!(
+            Filter {
+                device: Some("proj".into()),
+                ..Filter::default()
+            }
+            .apply(&all)
+            .len(),
+            1
+        );
+        assert_eq!(
+            Filter {
+                since_ms: Some(2_000),
+                ..Filter::default()
+            }
+            .apply(&all)
+            .len(),
+            1
+        );
+        assert_eq!(
+            Filter {
+                until_ms: Some(2_000),
+                ..Filter::default()
+            }
+            .apply(&all)
+            .len(),
+            1
+        );
+        assert_eq!(
+            Filter {
+                simulated: Some(true),
+                ..Filter::default()
+            }
+            .apply(&all)
+            .len(),
+            1
+        );
         assert_eq!(
             Filter {
                 rule: Some("main".into()),
