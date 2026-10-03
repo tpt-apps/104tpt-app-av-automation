@@ -5,13 +5,15 @@
 //! * [`Endpoint`] is the outbound side. [`VirtualEndpoint`] records commands and supports fault
 //!   injection (dropped messages, going offline mid-chain) for tests (spec §18.2); [`UdpEndpoint`]
 //!   talks OSC, Art-Net and sACN using the `tpt-av-control` codecs; [`MidiEndpoint`] encodes MIDI 1.0
-//!   and hands the bytes to any writer.
+//!   and hands the bytes to any writer; [`dmx_serial::DmxSerialEndpoint`] writes DMX512-A frames to a
+//!   serial adapter.
 
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
 pub mod command;
 pub mod config;
+pub mod dmx_serial;
 pub mod endpoint;
 pub mod midi_port;
 pub mod net;
@@ -19,6 +21,7 @@ pub mod registry;
 
 pub use command::Command;
 pub use config::{DeviceConfig, DeviceFile, SceneDef};
+pub use dmx_serial::{Dmx512Frame, DmxSerialEndpoint, DmxSerialOpener, DmxSerialPort};
 pub use endpoint::{Endpoint, EndpointError, Faults, VirtualEndpoint};
 pub use net::{build_endpoint, MidiEndpoint, MidiOpener, MidiWriter, UdpEndpoint, UdpProtocol};
 pub use registry::{Device, DeviceKind, DeviceRegistry, ProtocolBinding};

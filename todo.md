@@ -45,8 +45,8 @@ Phase 4 and 5 are untouched.
 
 ## Phase 1 — MVP Build (§19, §24.1 steps 1–15)
 
-- [ ] Establish Cargo workspace and application shell (crates listed in §4: core, model, triggers, conditions, actions, engine, devices, report, cli, service, test — stubs in place; `tauri` crate still to add)
-  - _Status:_ all crates exist and build except `tauri`, which is excluded from the workspace and not started (see the desktop UI items).
+- [x] Establish Cargo workspace and application shell (crates listed in §4: core, model, triggers, conditions, actions, engine, devices, report, cli, service, test, scenarios — stubs in place; `tauri` crate still to add)
+  - _Status:_ all crates exist and build except `tauri`, which is excluded from the workspace and not started (see the desktop UI items). `scenarios` runs the integration and chaos suites in `tests/integration` and `tests/chaos`.
 - [x] Integrate `tpt-av-control` and enumerate supported protocols (§5.1)
   - _Status:_ OSC, MIDI and DMX/Art-Net/sACN codecs are used; the control-surface crate is not (no surface triggers yet). Supported protocols are listed in `docs/integrations.md`.
 - [x] Implement the device/endpoint registry (§6.5)
@@ -60,11 +60,19 @@ Phase 4 and 5 are untouched.
   - _Status:_ engine, CLI, service and API; the always-visible UI indicator waits on the desktop UI.
 - [x] Implement OSC inbound/outbound trigger + action (§7.2, §8.1)
 - [ ] Implement MIDI (1.0/2.0) inbound/outbound trigger + action (§7.2, §8.1)
-  - _Status:_ MIDI 1.0 in/out is implemented and tested, but live ports (`midir`, by name) have **not** been tested against hardware, and MIDI 2.0/UMP is not implemented.
+  - _Status:_ MIDI 1.0 in/out is implemented and tested on live ports opened by name (`midir`);
+    MIDI 2.0/UMP is parsed from raw Universal MIDI Packets on a `ump` UDP listener (no desktop
+    platform exposes native MIDI 2.0 ports), normalized to the same `MidiLevel` and matched by
+    rules with `group` and 32-bit `value`. What is **not** done: the outbound MIDI 2.0 message
+    encoding (actions emit MIDI 1.0 bytes only), and live `midi`/`ump` ports have **not** been
+    exercised against real hardware — CI has no MIDI interface.
 - [x] Implement DMX/Art-Net/sACN channel-change trigger + output action (§7.2, §8.1)
-  - _Status:_ Art-Net and sACN in and out, tested over real sockets; serial DMX512 transport is not implemented.
+  - _Status:_ Art-Net and sACN in and out, tested over real sockets; serial DMX512-A output added
+  (`dmx512` devices, `devices::dmx_serial`) with driver-generated break framing and lazy reconnect —
+  not tested against a physical adapter. Serial DMX512 *input* is not implemented.
 - [x] Implement schedule trigger (cron-like, interval, one-shot) (§7.1)
-  - _Status:_ fixed time + weekdays, interval and one-shot; full cron expressions and sunrise/sunset are not supported.
+  - _Status:_ fixed time + weekdays, full five-field cron expressions (`30 18 * * mon-fri`,
+  with ranges, lists, steps and names), interval and one-shot; sunrise/sunset is not supported.
 - [x] Implement device online/offline/degraded trigger + heartbeat-missed trigger (§7.3, §11)
 - [x] Implement manual/API-invoked trigger (§7.6)
 - [x] Implement notify-operator action (§8.3)
@@ -109,12 +117,23 @@ Phase 4 and 5 are untouched.
   - _Status:_ 11 fixtures in `tests/fixtures/golden`, plus semantic assertions that pin their meaning.
 - [x] Chaos test: device goes offline mid-action-chain (§18.4)
 - [x] Chaos test: engine process killed mid-execution, restarted via watchdog (§18.4)
-  - _Status:_ `the_watchdog_restarts_a_forcibly_killed_engine` (kills the engine twice).
+  - _Status:_ `the_watchdog_restarts_a_forcibly_killed_engine` (kills the engine twice), plus
+  `tests/chaos/restart_under_load.rs`, which checks state durability across hard kills: the database
+  survives and is readable, a one-shot does not re-fire, and the engine still works after three
+  consecutive kills.
 - [x] Chaos test: conflicting rules firing on same event (§18.4)
 - [x] Chaos test: malformed inbound control message (§18.4)
-  - _Status:_ parser level and over a live UDP listener.
+  - _Status:_ parser level and over a live UDP listener, plus `tests/chaos/misbehaving_peers.rs`,
+  which throws malformed, truncated, oversized and random OSC and Art-Net traffic at a *live*
+  process and confirms it neither crashes nor stops working afterwards.
 - [x] Chaos test: network interruption during action execution (§18.4)
   - _Status:_ simulated with injected timeouts/delays/dropouts, not by cutting a real network.
+- [x] Integration suite driving the shipped binary in a real process (§19)
+  - _Status:_ `tests/integration/rule_pack_lifecycle.rs` (validate/simulate/history/exit-code
+  contract, and every pack under `rules/` still validating) and
+  `tests/integration/end_to_end_over_the_wire.rs` (OSC, Art-Net and MIDI 2.0/UMP arriving over real
+  UDP sockets and producing execution records readable through the API). Run by the `scenarios`
+  crate; both suites previously held only `.gitkeep`.
 - [x] Fuzz the YAML rule parser (§18.5)
   - _Status:_ coverage-guided targets in `fuzz/` (`rule-pack`, `inbound-osc`, `inbound-midi`,
     `inbound-dmx`, `api-request`), all building clean on nightly and run by CI on Linux. Round-trip and

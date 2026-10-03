@@ -21,6 +21,7 @@ tracing = { workspace = true }
 tpt-av-control-osc = { workspace = true }
 tpt-av-control-midi = { workspace = true }
 tpt-av-control-dmx = { workspace = true }
+serialport = "4"
 
 [dev-dependencies]
 serde_json = { workspace = true }

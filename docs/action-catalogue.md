@@ -7,7 +7,7 @@ records an outcome of **success**, **failed**, **timed_out** or **skipped**.
 |--------|-----------|--------|
 | `control.osc` | `device`, `address`, `args: [numbers]` | send an OSC message (integral numbers go as `i`, others as `f`) |
 | `control.midi` | `device`, `channel`, `kind`, `number`, `value` | send a MIDI 1.0 message (`note_on`, `note_off`, `cc`, `program_change`) to the device's MIDI output port; ranges are validated |
-| `control.dmx_channels` | `device`, `universe`, `start_channel`, `values`, `transport` | write consecutive channels; merged into the endpoint's universe state and sent as a full frame |
+| `control.dmx_channels` | `device`, `universe`, `start_channel`, `values`, `transport` | write consecutive channels; merged into the endpoint's universe state and sent as a full frame. `transport` is `art_net`, `sacn` or `dmx512`, and must match the endpoint |
 | `control.dmx_universe` | `device`, `universe`, `values`, `transport` | replace a whole universe |
 | `control.dmx_scene` | `device`, `scene`, `fade_ms` | recall a scene from the device's scene table (`fade_ms` is recorded; fading is not implemented by the Art-Net/sACN endpoints) |
 | `media.video_source` | `device`, `source`, `operation` | start/stop/switch a video source — see *Media* below |

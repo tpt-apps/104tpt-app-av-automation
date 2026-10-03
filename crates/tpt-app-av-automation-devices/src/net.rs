@@ -13,6 +13,7 @@ use tpt_av_control_osc::{OscArg, OscMessage};
 
 use crate::command::Command;
 use crate::config::{DeviceConfig, SceneDef};
+use crate::dmx_serial::DmxSerialEndpoint;
 use crate::endpoint::{Endpoint, EndpointError, VirtualEndpoint};
 
 const DMX_CHANNELS: usize = 512;
@@ -302,7 +303,8 @@ impl Endpoint for MidiEndpoint {
 ///
 /// `virtual` devices get a [`VirtualEndpoint`] (used for dry runs against a real pack). MIDI devices
 /// connect lazily to the output port whose name contains `address`, and reconnect after a failure;
-/// until a matching port exists, sends report the device unreachable.
+/// until a matching port exists, sends report the device unreachable. `dmx512` devices open the
+/// named serial port lazily on the same terms.
 pub fn build_endpoint(config: &DeviceConfig) -> Result<Box<dyn Endpoint>> {
     let address = config.address.clone().unwrap_or_default();
     let udp = |protocol| {
@@ -317,6 +319,18 @@ pub fn build_endpoint(config: &DeviceConfig) -> Result<Box<dyn Endpoint>> {
         "midi" => Ok(Box::new(MidiEndpoint::with_opener(crate::midi_port::output_opener(
             address,
         )))),
+        "dmx512" => {
+            if address.trim().is_empty() {
+                return Err(Error::Control(format!(
+                    "device `{}`: a dmx512 device needs a serial port name in `address`",
+                    config.id
+                )));
+            }
+            Ok(Box::new(DmxSerialEndpoint::with_opener(
+                crate::dmx_serial::port_opener(address, 1000),
+                config.scenes.clone(),
+            )))
+        }
         "virtual" => Ok(Box::new(VirtualEndpoint::new())),
         other => Err(Error::Control(format!(
             "device `{}`: unknown protocol `{other}`",
@@ -564,5 +578,32 @@ mod tests {
             assert!(build_endpoint(&cfg(p)).is_ok(), "{p}");
         }
         assert!(build_endpoint(&cfg("bogus")).is_err());
+    }
+
+    #[test]
+    fn a_dmx512_device_builds_a_serial_endpoint_that_needs_a_port_name() {
+        let base = DeviceConfig {
+            id: "rig".into(),
+            name: None,
+            kind: Default::default(),
+            protocol: "dmx512".into(),
+            address: Some("COM3".into()),
+            heartbeat_ms: None,
+            scenes: BTreeMap::new(),
+        };
+        assert!(
+            build_endpoint(&base).is_ok(),
+            "the endpoint is built lazily, so an absent adapter is not a load error"
+        );
+        let unnamed = DeviceConfig {
+            address: None,
+            ..base.clone()
+        };
+        assert!(build_endpoint(&unnamed).is_err(), "no port name is a configuration error");
+        let blank = DeviceConfig {
+            address: Some("   ".into()),
+            ..base
+        };
+        assert!(build_endpoint(&blank).is_err(), "a blank port name is a configuration error");
     }
 }

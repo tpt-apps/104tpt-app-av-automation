@@ -12,6 +12,7 @@ members = [
     "crates/tpt-app-av-automation-test",
     "crates/tpt-app-av-automation-service",
     "crates/tpt-app-av-automation-cli",
+    "crates/tpt-app-av-automation-scenarios",
 ]
 
 # The Tauri desktop shell is not part of the default workspace build because it

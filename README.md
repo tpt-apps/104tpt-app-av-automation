@@ -24,9 +24,10 @@ state of every item.
 |------|-------|
 | Rule model, YAML format, validation | done |
 | Deterministic engine, simulation, arm/disarm, conflicts, cancellation | done |
-| Triggers: schedule, OSC, MIDI, DMX/Art-Net/sACN, device health, heartbeat, manual/API | done |
-| Actions: OSC, MIDI, DMX/Art-Net/sACN, notify, incident log, wait, invoke rule, sandboxed exec | done |
+| Triggers: schedule, OSC, MIDI 1.0/2.0, DMX/Art-Net/sACN, device health, heartbeat, manual/API | done |
+| Actions: OSC, MIDI, DMX/Art-Net/sACN/serial DMX512, notify, incident log, wait, invoke rule, sandboxed exec | done |
 | MIDI ports (live in/out by name via `midir`) | implemented, **not tested against hardware** |
+| DMX512 serial output (`dmx512` devices, `serialport`) | implemented, **not tested against a physical adapter** |
 | Media actions (`media.video_source`, `media.audio_route`) | parsed, simulated, routed to an endpoint — **no real media backend yet** |
 | CLI: `validate`, `simulate`, `run`, `watchdog`, `history` | done |
 | Headless service, SQLite persistence, restart-safe one-shots, watchdog | done |

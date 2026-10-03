@@ -1,0 +1,39 @@
+[package]
+name = "tpt-app-av-automation-scenarios"
+description = "Integration and chaos scenarios run against the shipped CLI binary (spec §18.4, §19)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+
+# Integration and chaos scenarios live in the spec-mandated top-level directories
+# (`tests/integration/` and `tests/chaos/`, spec.txt §4) rather than inside this crate, so they
+# read as the operator-facing suites they are. The `[[test]]` targets below `#[path]` them in.
+
+[dependencies]
+
+[dev-dependencies]
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+tpt-av-control-osc = { workspace = true }
+tpt-av-control-midi = { workspace = true }
+tpt-av-control-dmx = { workspace = true }
+
+[[test]]
+name = "integration"
+path = "../../tests/integration/rule_pack_lifecycle.rs"
+
+[[test]]
+name = "integration_network"
+path = "../../tests/integration/end_to_end_over_the_wire.rs"
+
+[[test]]
+name = "chaos_restart"
+path = "../../tests/chaos/restart_under_load.rs"
+
+[[test]]
+name = "chaos_misbehaving_peers"
+path = "../../tests/chaos/misbehaving_peers.rs"

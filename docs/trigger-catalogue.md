@@ -39,5 +39,7 @@ Phase 2 signal-condition and media-pipeline triggers (`signal_lost`, black/freez
 silence/clipping, A/V drift, watch folders, job events, sibling-app events).
 
 MIDI 2.0 arrives as raw Universal MIDI Packets on a `ump` UDP listener rather than from a local
-`midi` port, because no desktop platform currently exposes native MIDI 2.0 ports to `midir`.
-Serial DMX512 is not implemented either.
+`midi` port, because no desktop platform currently exposes native MIDI 2.0 ports to `midir`. The
+kinds after `program_change` in the table above therefore only ever match a `ump` source. Serial
+DMX512 is output-only: a `dmx512` device writes frames to a serial port, but a rule cannot trigger
+on DMX read back from that port.

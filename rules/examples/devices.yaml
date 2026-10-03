@@ -28,3 +28,13 @@ devices:
     name: Main Display
     kind: display
     protocol: virtual
+  # Serial DMX512-A adapter. `address` is the serial port name, not a host:port. A serial port is one
+  # universe, so scenes must use universe 1. Commented out so the example file validates on a
+  # machine with no such adapter; uncomment and set `address` to your port to use it.
+  # - id: house-lights
+  #   name: House Lights
+  #   kind: lighting
+  #   protocol: dmx512
+  #   address: "COM3"
+  #   scenes:
+  #     house-to-half: { universe: 1, start_channel: 0, values: [128, 128, 128, 128] }

@@ -31,9 +31,10 @@ pub struct DeviceConfig {
     /// Category.
     #[serde(default)]
     pub kind: DeviceKind,
-    /// `osc`, `artnet`, `sacn`, `midi`, `ump` or `virtual`.
+    /// `osc`, `artnet`, `sacn`, `midi`, `ump`, `dmx512` or `virtual`.
     pub protocol: String,
-    /// `host:port` for network protocols, or (part of) the MIDI port name.
+    /// `host:port` for network protocols, (part of) the MIDI port name, or the serial port name
+    /// (e.g. `COM3` or `/dev/ttyUSB0`) for `dmx512`.
     #[serde(default)]
     pub address: Option<String>,
     /// Heartbeat deadline in milliseconds.
@@ -66,7 +67,9 @@ pub struct DeviceFile {
     pub devices: Vec<DeviceConfig>,
 }
 
-const PROTOCOLS: [&str; 6] = ["osc", "artnet", "sacn", "midi", "ump", "virtual"];
+const PROTOCOLS: [&str; 7] = [
+    "osc", "artnet", "sacn", "midi", "ump", "dmx512", "virtual",
+];
 
 impl DeviceFile {
     /// Parses YAML; a malformed document is a parse error, never a panic.
@@ -113,11 +116,26 @@ impl DeviceFile {
                     "`midi` devices need `address` set to (part of) the MIDI output port name",
                 ));
             }
+            if d.protocol == "dmx512" && d.address.as_deref().is_none_or(|a| a.trim().is_empty()) {
+                out.push(Diagnostic::error(
+                    format!("{loc}.address"),
+                    "`dmx512` devices need `address` set to the serial port name, e.g. COM3 or /dev/ttyUSB0",
+                ));
+            }
             for (name, scene) in &d.scenes {
                 if usize::from(scene.start_channel) + scene.values.len() > 512 {
                     out.push(Diagnostic::error(
                         format!("{loc}.scenes.{name}"),
                         "scene runs past channel 512",
+                    ));
+                }
+                if d.protocol == "dmx512" && scene.universe != 1 {
+                    out.push(Diagnostic::error(
+                        format!("{loc}.scenes.{name}.universe"),
+                        format!(
+                            "a `dmx512` serial port carries universe 1 only; scene uses universe {}",
+                            scene.universe
+                        ),
                     ));
                 }
             }
@@ -168,6 +186,35 @@ devices:
         assert!(locations.contains(&"devices[0].address"));
         assert!(locations.contains(&"devices[1].id"));
         assert!(locations.contains(&"devices[1].protocol"));
+    }
+
+    #[test]
+    fn a_dmx512_device_needs_a_serial_port_name() {
+        let missing = DeviceFile::from_yaml_str("devices:\n  - {id: rig, protocol: dmx512}\n").unwrap();
+        let diags = missing.validate();
+        let locations: Vec<_> = diags.iter().map(|d| d.location.as_str()).collect();
+        assert_eq!(locations, vec!["devices[0].address"]);
+
+        let named =
+            DeviceFile::from_yaml_str("devices:\n  - {id: rig, protocol: dmx512, address: 'COM3'}\n")
+                .unwrap();
+        assert!(named.validate().is_empty(), "a named serial port is accepted");
+
+        let blank =
+            DeviceFile::from_yaml_str("devices:\n  - {id: rig, protocol: dmx512, address: '  '}\n")
+                .unwrap();
+        assert_eq!(blank.validate().len(), 1, "a blank serial port name is rejected");
+    }
+
+    #[test]
+    fn a_dmx512_scene_on_another_universe_is_rejected() {
+        let file = DeviceFile::from_yaml_str(
+            "devices:\n  - id: rig\n    protocol: dmx512\n    address: 'COM3'\n    scenes:\n      s: {universe: 2, values: [1]}\n",
+        )
+        .unwrap();
+        let diags = file.validate();
+        let locations: Vec<_> = diags.iter().map(|d| d.location.as_str()).collect();
+        assert_eq!(locations, vec!["devices[0].scenes.s.universe"]);
     }
 
     #[test]

@@ -22,6 +22,14 @@ released. The CLI exit-code contract (0–6) and the `format_version: 1` rule fo
 - Headless service, watchdog, local REST + WebSocket API (disabled by default, loopback + token).
 - CLI: `validate`, `simulate`, `run`, `watchdog`, `history`.
 - Live MIDI I/O by port name through `midir`, with lazy reconnection (not hardware-tested).
+- MIDI 2.0/UMP: raw Universal MIDI Packets parsed from a `ump` UDP listener and normalized to the
+  same event shape as MIDI 1.0, carrying the 32-bit value and UMP group (inbound only; outbound
+  actions still emit MIDI 1.0 bytes).
+- DMX512-A serial output (`dmx512` devices) with driver-generated break framing, lazy reconnect and
+  single-universe enforcement (not tested against a physical adapter).
+- Integration and chaos scenario suites driving the shipped binary in a real process: rule-pack
+  lifecycle, OSC/Art-Net/MIDI 2.0 over real sockets, forced-restart durability, and hostile
+  inbound traffic (`tests/integration/`, `tests/chaos/`).
 - Persistent incident log and `GET /incidents`.
 - Write-ahead scheduler state: one-shot schedules are at-most-once across a hard kill.
 - Golden rule-pack traces, chaos tests, mutation-based robustness tests and a throughput test.

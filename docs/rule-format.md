@@ -72,8 +72,8 @@ devices:
   - id: lighting-rack
     name: Lighting Rack            # defaults to the id
     kind: lighting                 # lighting | display | audio | switcher | media | other
-    protocol: artnet               # osc | artnet | sacn | midi | ump | virtual
-    address: 127.0.0.1:6454        # host:port; for midi, part of the output port name
+    protocol: artnet               # osc | artnet | sacn | midi | ump | dmx512 | virtual
+    address: 127.0.0.1:6454        # host:port; for midi, part of the output port name; for dmx512, the serial port name
     heartbeat_ms: 15000            # optional deadline; silence beyond it = offline
     scenes:                        # named DMX scenes for control.dmx_scene
       house-to-half: { universe: 1, start_channel: 0, values: [128, 128, 128, 128] }
