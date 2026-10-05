@@ -93,6 +93,36 @@ jobs:
         shell: pwsh
         run: ./scripts/package-windows.ps1
 
+  # The desktop shell has its own manifest (excluded from the workspace: it needs the
+  # Tauri/WebView2 toolchain), so it is built and tested separately. Windows runners ship
+  # WebView2, which is the reference platform for the app (spec §12).
+  desktop:
+    name: Desktop (Windows, Tauri)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates/tpt-app-av-automation-tauri
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Format
+        run: cargo fmt --manifest-path crates/tpt-app-av-automation-tauri/Cargo.toml --check
+
+      - name: Clippy
+        run: cargo clippy --manifest-path crates/tpt-app-av-automation-tauri/Cargo.toml --all-targets -- -D warnings
+
+      - name: Test (Rust: boot and embedded service)
+        run: cargo test --manifest-path crates/tpt-app-av-automation-tauri/Cargo.toml --locked
+
+      - name: Test (UI helpers)
+        run: node --test crates/tpt-app-av-automation-tauri/ui/test/format.test.js
+
   # Deeper fuzz campaigns for the parser surfaces that carry the most risk in a live show.
   # Scheduled rather than per-push because each run is measured in hours.
   fuzz-nightly:

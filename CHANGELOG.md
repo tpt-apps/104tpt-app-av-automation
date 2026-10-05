@@ -53,6 +53,16 @@ released. The CLI exit-code contract (0–6) and the `format_version: 1` rule fo
 - GitHub Actions CI: Linux (fmt, clippy, systemd unit validation, tests), Windows (tests, packaged
   release smoke test) and nightly fuzzing.
 - Windows packaging script (static CRT) and a hardened systemd unit (Linux unvalidated).
+- Desktop application (Tauri, `crates/tpt-app-av-automation-tauri`, excluded from the default
+  workspace build): dashboard, rule builder, device manager and execution timeline over an
+  embedded service — the same engine, pack operations and status document as the CLI and the local
+  API (spec §12). The builder canvas and the Pack YAML view are two renderings of one
+  representation: edits go through the engine's own parse/validate/hot-load path, armed state is
+  always visible, the LIVE/SIMULATION banner is always on screen, and a pack is applied or
+  rejected with the engine's located diagnostics. Device manager supports manual pings; the
+  timeline filters by rule, status and mode and jumps back to the rule that produced an execution.
+  The webview holds no business logic: the `service::ui` bridge is covered by Rust integration
+  tests, and the renderer's pure helpers by `node --test`.
 
 ### Fixed
 - The `misbehaving_peers` chaos scenarios (`tests/chaos/misbehaving_peers.rs`) could fail on a loaded
@@ -90,4 +100,5 @@ released. The CLI exit-code contract (0–6) and the `format_version: 1` rule fo
   hid the located diagnostics and produced the wrong CLI exit code.
 
 ### Not yet implemented
-Desktop application; `tpt-kinetix`/`tpt-cadence` media backends; Phase 2 and 3 features.
+`tpt-kinetix`/`tpt-cadence` media backends; desktop packaging/installer and hardware-validated
+desktop use; Phase 2 and 3 features.

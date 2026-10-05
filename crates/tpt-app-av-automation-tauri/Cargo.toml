@@ -1,0 +1,35 @@
+[package]
+name = "tpt-app-av-automation-tauri"
+description = "Desktop dashboard, rule builder, device manager and timeline (spec §12)."
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.82"
+license = "MIT OR Apache-2.0"
+authors = ["TPT Solutions"]
+repository = "https://github.com/tpt-apps/104tpt-app-av-automation"
+homepage = "https://opensource.tptsolutions.co.nz/"
+readme = "../../README.md"
+publish = false
+
+# This crate is excluded from the root workspace: it drags in the Tauri/WebView2
+# stack, which must not be a prerequisite for working on the engine. Build it with
+# `cargo build --manifest-path crates/tpt-app-av-automation-tauri/Cargo.toml`.
+[dependencies]
+tpt-app-av-automation-core = { path = "../tpt-app-av-automation-core", version = "0.1.0" }
+tpt-app-av-automation-devices = { path = "../tpt-app-av-automation-devices", version = "0.1.0" }
+tpt-app-av-automation-model = { path = "../tpt-app-av-automation-model", version = "0.1.0" }
+tpt-app-av-automation-service = { path = "../tpt-app-av-automation-service", version = "0.1.0" }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_yaml = "0.9"
+tauri = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[build-dependencies]
+tauri-build = "2"
+
+[features]
+# `tauri`'s custom-protocol feature is required in release builds by the bundler.
+default = []
+custom-protocol = ["tauri/custom-protocol"]

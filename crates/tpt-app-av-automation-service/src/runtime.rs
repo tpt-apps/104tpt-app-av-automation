@@ -14,11 +14,14 @@ use serde_json::{json, Value};
 use tpt_app_av_automation_actions::{
     Actions, ExecPolicy, Incident, IncidentSink, ThreadSleeper, TracingSink,
 };
-use tpt_app_av_automation_core::{Clock, DeviceHealth, Error, Event, Result, Timestamp};
+use tpt_app_av_automation_core::{
+    slugify_rule_id, ActionId, Clock, ConditionId, DeviceHealth, Error, Event, Result, RuleId,
+    Timestamp,
+};
 use tpt_app_av_automation_devices::dmx_serial::{Dmx512Assembler, DmxSerialReader};
 use tpt_app_av_automation_devices::{build_endpoint, DeviceFile, DeviceRegistry, Endpoint};
 use tpt_app_av_automation_engine::{CancelHandle, Engine, EngineConfig, Mode};
-use tpt_app_av_automation_model::{has_errors, ExecutionRecord, RulePack};
+use tpt_app_av_automation_model::{has_errors, ExecutionRecord, Rule, RulePack};
 use tpt_app_av_automation_report::machine_result;
 use tpt_app_av_automation_triggers::{Inbound, InboundLimits, LocalClock};
 
@@ -29,7 +32,11 @@ const RECENT_LIMIT: usize = 200;
 const QUEUE_DEPTH: usize = 8192;
 
 /// A request to the engine thread that needs an answer.
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// The pack-editing variants (`ValidatePack`, `LoadPack`, `UpsertRule`, `RemoveRule`) report
+/// authoring mistakes as a structured `Ok` answer (`valid: false` plus diagnostics) rather than an
+/// `Err`: a rejected pack is a normal, expected outcome of the editor, not a service failure.
+#[derive(Debug, Clone, PartialEq)]
 pub enum ControlRequest {
     /// Arm a rule.
     Arm(String),
@@ -37,10 +44,110 @@ pub enum ControlRequest {
     Disarm(String),
     /// Run a rule now.
     Run(String),
+    /// The current pack as YAML.
+    PackYaml,
+    /// The current pack as JSON — what the builder canvas renders (spec §12.2).
+    PackJson,
+    /// Parse and validate a candidate pack without applying it.
+    ValidatePack(String),
+    /// Parse, validate and hot-load a pack (rules unchanged in id *and* version stay armed).
+    LoadPack(String),
+    /// Insert or replace one rule (matched by id) in the current pack.
+    UpsertRule(Value),
+    /// Remove one rule from the current pack.
+    RemoveRule(String),
+    /// Switch the whole engine between live and simulation.
+    Simulation(bool),
+    /// Probe one device's endpoint now (device manager "test" button).
+    PingDevice(String),
 }
 
 /// The answer to a [`ControlRequest`].
 pub type ControlReply = std::result::Result<Value, String>;
+
+/// Turns a pack-parse failure into the structured "rejected pack" answer the editor renders.
+fn validation_failure(e: Error) -> Value {
+    match e {
+        Error::Validation(diagnostics) => json!({
+            "valid": false,
+            "diagnostics": diagnostics,
+        }),
+        other => json!({
+            "valid": false,
+            "diagnostics": [{
+                "severity": "error",
+                "location": "pack",
+                "message": other.to_string(),
+            }],
+        }),
+    }
+}
+
+/// The success answer for a pack change.
+fn loaded_reply(pack: &RulePack) -> Value {
+    json!({
+        "valid": true,
+        "name": pack.name,
+        "revision": pack.revision,
+        "rules": pack.rules.len(),
+    })
+}
+
+/// A dotted identifier not present in `taken`, extending with `-2`, `-3`, … when needed.
+fn unique_id(base: &str, taken: &[String]) -> String {
+    let mut candidate = if base.is_empty() {
+        "rule".to_string()
+    } else {
+        base.to_string()
+    };
+    let mut n = 1;
+    while taken.iter().any(|id| id == &candidate) {
+        n += 1;
+        candidate = format!("{base}-{n}");
+    }
+    candidate
+}
+
+/// Fills blank step and condition ids in a builder-authored rule.
+///
+/// YAML authors write ids by hand; the visual builder works with display names, so blank ids get
+/// stable generated ones (`c1`, `a2`, `f1`) that execution records can reference.
+fn assign_step_and_condition_ids(rule: &mut Rule) {
+    let mut taken: Vec<String> = rule
+        .conditions
+        .iter()
+        .map(|c| c.id.as_str().to_owned())
+        .filter(|id| !id.trim().is_empty())
+        .collect();
+    taken.extend(
+        rule.actions
+            .iter()
+            .chain(rule.policy.fallback.iter())
+            .map(|s| s.id.as_str().to_owned())
+            .filter(|id| !id.trim().is_empty()),
+    );
+    let mut next = |prefix: &str| {
+        let base = format!("{prefix}{}", taken.len() + 1);
+        let id = unique_id(&base, &taken);
+        taken.push(id.clone());
+        id
+    };
+    for (i, condition) in rule.conditions.iter_mut().enumerate() {
+        if condition.id.is_blank() {
+            condition.id = ConditionId::new(next(&format!("c{}", i + 1)));
+        }
+    }
+    for (i, step) in rule.actions.iter_mut().enumerate() {
+        if step.id.is_blank() {
+            step.id = ActionId::new(next(&format!("a{}", i + 1)));
+        }
+    }
+    for (i, step) in rule.policy.fallback.iter_mut().enumerate() {
+        if step.id.is_blank() {
+            step.id = ActionId::new(next(&format!("f{}", i + 1)));
+        }
+    }
+}
 
 enum Msg {
     Event(Event),
@@ -293,6 +400,8 @@ pub struct Service {
     handle: ServiceHandle,
     rx: Receiver<Msg>,
     probes: Vec<(String, Arc<dyn Endpoint>)>,
+    /// Every bound endpoint by device id, for manual pings from the device manager.
+    ping_targets: BTreeMap<String, Arc<dyn Endpoint>>,
     device_by_ip: HashMap<IpAddr, String>,
 }
 
@@ -331,11 +440,13 @@ impl Service {
 
         let mut registry = DeviceRegistry::new();
         let mut probes = Vec::new();
+        let mut ping_targets = BTreeMap::new();
         let mut device_by_ip = HashMap::new();
         for device in &devices.devices {
             registry.register(device.to_device());
             let endpoint: Arc<dyn Endpoint> = Arc::from(build_endpoint(device)?);
             actions.bind_endpoint(device.id.clone(), endpoint.clone());
+            ping_targets.insert(device.id.clone(), endpoint.clone());
             match device.protocol.as_str() {
                 // Connectionless network protocols cannot be probed; their health comes from the
                 // traffic they send us, so only these endpoint kinds are pinged.
@@ -405,6 +516,7 @@ impl Service {
             handle,
             rx,
             probes,
+            ping_targets,
             device_by_ip,
         };
         service.refresh_snapshot();
@@ -541,6 +653,138 @@ impl Service {
                 }
                 Err(e) => fail(e),
             },
+            ControlRequest::PackYaml => match self.engine.pack().to_yaml_string() {
+                Ok(yaml) => (Vec::new(), Ok(Value::String(yaml))),
+                Err(e) => fail(e),
+            },
+            ControlRequest::PackJson => match serde_json::to_value(self.engine.pack()) {
+                Ok(pack) => (Vec::new(), Ok(pack)),
+                Err(e) => fail(e.into()),
+            },
+            ControlRequest::ValidatePack(yaml) => (Vec::new(), self.validate_request(&yaml)),
+            ControlRequest::LoadPack(yaml) => self.load_pack_request(&yaml),
+            ControlRequest::UpsertRule(rule) => match serde_json::from_value::<Rule>(rule) {
+                Ok(mut rule) => {
+                    // The builder works with names, not ids: steps and conditions an operator
+                    // did not name get stable generated ids, exactly as the YAML format expects.
+                    let mut taken: Vec<String> = self
+                        .engine
+                        .pack()
+                        .rules
+                        .iter()
+                        .map(|r| r.id.as_str().to_owned())
+                        .collect();
+                    taken.retain(|id| id != rule.id.as_str());
+                    if rule.id.is_blank() {
+                        rule.id = RuleId::new(unique_id(&slugify_rule_id(&rule.name), &taken));
+                    }
+                    assign_step_and_condition_ids(&mut rule);
+                    let mut pack = self.engine.pack().clone();
+                    match pack.rules.iter().position(|r| r.id == rule.id) {
+                        Some(index) => pack.rules[index] = rule,
+                        None => pack.rules.push(rule),
+                    }
+                    self.apply_pack(pack)
+                }
+                Err(e) => (Vec::new(), Err(format!("invalid rule: {e}"))),
+            },
+            ControlRequest::RemoveRule(id) => {
+                let mut pack = self.engine.pack().clone();
+                let before = pack.rules.len();
+                pack.rules.retain(|r| r.id.as_str() != id);
+                if pack.rules.len() == before {
+                    return (Vec::new(), Err(format!("unknown rule `{id}`")));
+                }
+                self.apply_pack(pack)
+            }
+            ControlRequest::Simulation(on) => {
+                self.engine
+                    .set_mode(if on { Mode::Simulation } else { Mode::Live });
+                (Vec::new(), Ok(json!({ "simulation": on })))
+            }
+            ControlRequest::PingDevice(id) => match self.ping_targets.get(&id) {
+                Some(endpoint) => {
+                    let reachable = endpoint.ping().is_ok();
+                    (
+                        Vec::new(),
+                        Ok(json!({ "device": id, "reachable": reachable })),
+                    )
+                }
+                None => (Vec::new(), Err(format!("unknown device `{id}`"))),
+            },
+        }
+    }
+
+    /// Validates a candidate pack against the current registry without applying it.
+    fn validate_request(&self, yaml: &str) -> ControlReply {
+        Ok(match RulePack::from_yaml_str(yaml) {
+            Err(e) => validation_failure(e),
+            Ok(pack) => {
+                let device_errors = self.engine.check_devices_for(&pack);
+                if has_errors(&device_errors) {
+                    json!({
+                        "valid": false,
+                        "diagnostics": device_errors,
+                    })
+                } else {
+                    json!({
+                        "valid": true,
+                        "name": pack.name,
+                        "revision": pack.revision,
+                        "rules": pack.rules.len(),
+                    })
+                }
+            }
+        })
+    }
+
+    /// Validates and hot-loads a pack, persisting it to the version history (spec §15).
+    fn load_pack_request(&mut self, yaml: &str) -> (Vec<ExecutionRecord>, ControlReply) {
+        let pack = match RulePack::from_yaml_str(yaml) {
+            Ok(pack) => pack,
+            Err(e) => return (Vec::new(), Ok(validation_failure(e))),
+        };
+        let device_errors = self.engine.check_devices_for(&pack);
+        if has_errors(&device_errors) {
+            return (
+                Vec::new(),
+                Ok(json!({ "valid": false, "diagnostics": device_errors })),
+            );
+        }
+        match self.engine.load_pack(pack) {
+            Ok(()) => {
+                self.persist_pack();
+                (Vec::new(), Ok(loaded_reply(self.engine.pack())))
+            }
+            // load_pack only fails on validation, so the editor still gets a structured answer.
+            Err(e) => (Vec::new(), Ok(validation_failure(e))),
+        }
+    }
+
+    /// Applies an already-assembled pack through the same validation path as [`Self::load_pack_request`].
+    fn apply_pack(&mut self, pack: RulePack) -> (Vec<ExecutionRecord>, ControlReply) {
+        let device_errors = self.engine.check_devices_for(&pack);
+        if has_errors(&device_errors) {
+            return (
+                Vec::new(),
+                Ok(json!({ "valid": false, "diagnostics": device_errors })),
+            );
+        }
+        match self.engine.load_pack(pack) {
+            Ok(()) => {
+                self.persist_pack();
+                (Vec::new(), Ok(loaded_reply(self.engine.pack())))
+            }
+            Err(e) => (Vec::new(), Ok(validation_failure(e))),
+        }
+    }
+
+    fn persist_pack(&self) {
+        if let Some(store) = &self.handle.store {
+            let store = store.lock().unwrap_or_else(|e| e.into_inner());
+            if let Err(e) = store.save_pack(self.engine.pack(), self.engine.now().as_millis()) {
+                tracing::error!("could not persist rule pack: {e}");
+            }
         }
     }
 

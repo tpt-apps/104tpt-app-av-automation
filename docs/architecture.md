@@ -2,10 +2,10 @@
 
 The product centre of gravity is **Trigger → Condition → Action → Explain → Recover** (spec §23).
 The deterministic rule core is separate from every shell that hosts it (spec §3.6): the CLI, the
-headless service and the future desktop application all drive the *same* `Engine`.
+headless service and the desktop application all drive the *same* `Engine`.
 
 ```text
-                    CLI        Service (headless)        Desktop (planned)
+                    CLI        Service (headless)        Desktop (Tauri)
                      │               │                          │
                      └───────────────┼──────────────────────────┘
                                      ▼
@@ -15,6 +15,11 @@ headless service and the future desktop application all drive the *same* `Engine
            (model + triggers)    (conditions)      (actions + devices)
 ```
 
+The desktop app embeds the headless service unchanged. Its webview renders JSON from the
+`service::ui` bridge — the same status document the local API serves — and every edit (pack YAML,
+rule builder, arm/disarm, simulation switch) is a control request to the engine thread, so it is
+validated by exactly the code the CLI validates with. The renderer holds no business logic.
+
 ## Crate dependency direction
 
 ```text
@@ -22,6 +27,7 @@ core ◀── model ◀── triggers ─┐
   ▲        ▲                 ├──▶ engine ◀── service ◀── cli
   │        ├── conditions ───┤       ▲          ▲
   │        └── devices ◀── actions ──┘      report
+                           └── tauri (excluded from the default workspace build)
 ```
 
 * `model` is pure data + validation: no I/O, no clock, no network. It is where "what is a valid rule"

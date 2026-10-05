@@ -8,6 +8,7 @@ pub mod api;
 pub mod config;
 pub mod runtime;
 pub mod store;
+pub mod ui;
 pub mod watchdog;
 mod ws;
 
@@ -16,4 +17,5 @@ pub use runtime::{
     ControlReply, ControlRequest, DeviceInfo, RuleInfo, Service, ServiceHandle, Snapshot,
 };
 pub use store::{PackVersion, Store, StoredIncident};
+pub use ui::{CatalogueEntry, CatalogueGroup, UiBridge};
 pub use watchdog::{supervise, Outcome, WatchdogEvent, WatchdogPolicy};

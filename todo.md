@@ -102,14 +102,31 @@ Phase 4 and 5 are untouched.
 - [x] Implement running-chain cancellation by operator (§10.2)
   - _Status:_ via `CancelHandle` and `POST /executions/:id/cancel`.
 - [x] Implement CLI: `validate`, `simulate`, `run --service`, stable exit-code contract (0–6) (§13)
-- [ ] Implement desktop dashboard (active rules, device health, recent executions, active chains, system status) (§12.1)
-  - _Status:_ not started (Tauri). The engine, API and `/health` already expose the data it needs.
-- [ ] Implement execution log / timeline UI with filters and rule drill-down (§12.4)
-  - _Status:_ not started (Tauri). Filtering exists in `report::Filter`, `GET /executions` and `history`.
-- [ ] Implement device manager UI (list, health, config, last-seen, manual ping) (§12.3)
-  - _Status:_ not started (Tauri). `GET /devices` and the device file cover the data.
-- [ ] Implement YAML-backed visual rule builder (trigger→condition→action canvas, round-trips to YAML) (§12.2)
-  - _Status:_ not started (Tauri). The YAML format round-trips (`RulePack::to_yaml_string`).
+- [x] Implement desktop dashboard (active rules, device health, recent executions, active chains, system status) (§12.1)
+  - _Status:_ Tauri desktop app (`crates/tpt-app-av-automation-tauri`, excluded from the default
+    workspace build). Embeds the headless service unchanged; the webview renders JSON from the
+    `service::ui` bridge — the same status document `/health` serves, including listener loss and
+    rejected-inbound counters. Rules with armed toggles, device health counts, running chains with
+    operator cancel, and the most recent executions.
+- [x] Implement execution log / timeline UI with filters and rule drill-down (§12.4)
+  - _Status:_ timeline filters by rule, device, status, live/simulated, time range and row limit
+    (the same `report::Filter` as `GET /executions`); a row opens the full record — trigger detail,
+    per-condition pass/fail, per-action outcome with errors — with a jump back to the rule in the
+    builder. Incident log and pack version history (with restore) sit alongside.
+- [x] Implement device manager UI (list, health, config, last-seen, manual ping) (§12.3)
+  - _Status:_ device list with health dots, protocol/address, last-seen age and a manual ping
+    (`PingDevice` control probing the bound endpoint). The device file is loaded at startup;
+    editing device configs still happens in `devices.yaml` (the engine binds endpoints at build).
+    Import from TPT AV Commissioning is the Phase 4 item below.
+- [x] Implement YAML-backed visual rule builder (trigger→condition→action canvas, round-trips to YAML) (§12.2)
+  - _Status:_ rule cards (trigger → conditions → actions) render from `pack_json`; a "new rule"
+    wizard assembles a valid rule from the catalogue (9 triggers, 6 conditions, 13 actions, each
+    with a canonical example pinned by tests against the model types); the per-rule form edits
+    fields with enum-aware inputs and preserves what it does not render (policy, fallback chain,
+    reentrancy); the Pack YAML tab is the direct text view with Validate/Apply and the engine's
+    located diagnostics. Both views drive the same engine parse/validate/hot-load path, so the
+    round-trip cannot drift. Pack hot reload keeps armed state for unchanged rules and persists
+    every applied version (restore from history). Form editing of fallback chains happens via YAML.
 - [x] Implement local API, disabled by default, `127.0.0.1`-only, token auth when enabled (`/rules`, `/devices`, `/executions`, `/health`, `/events` WS) (§14)
   - _Status:_ REST plus the `/events` WebSocket; also `/incidents` and execution cancel.
 - [x] Implement inbound control-message validation + rate limiting/backoff (§16)
@@ -195,8 +212,9 @@ Phase 4 and 5 are untouched.
 - [ ] Verify Definition of Done checklist (§24):
   - [x] Rule pack authored (YAML or visual builder) validates without errors
     - _Status:_ YAML; the visual builder waits on the desktop UI.
-  - [ ] Rules arm/disarm with state always visible in UI
-    - _Status:_ arm/disarm and state are visible through the API, `/health` and execution records; no UI yet.
+  - [x] Rules arm/disarm with state always visible in UI
+    - _Status:_ the desktop dashboard shows every rule's armed state, the LIVE/SIMULATION banner
+      is always on screen, and arm/disarm toggles go through the engine's control queue.
   - [x] Simulation mode never sends a real control message or media action
     - _Status:_ `simulation_never_sends_a_real_control_message_even_for_armed_rules` (real UDP receiver), plus engine and golden tests.
   - [x] Engine runs headless as supervised service and survives forced restart without duplicate one-shot firing
@@ -208,8 +226,9 @@ Phase 4 and 5 are untouched.
   - [x] Device health (online/degraded/offline) tracked and can itself trigger a rule
   - [x] Every execution logged with trigger detail, condition results, per-action outcomes
   - [x] Partially failed action chain reported as partial failure, never full success
-  - [ ] CLI validates/simulates/runs same rule packs as GUI
-    - _Status:_ CLI, service and (future) GUI share one engine, but there is no GUI yet.
+  - [x] CLI validates/simulates/runs same rule packs as GUI
+    - _Status:_ CLI, service and desktop GUI share one engine; desktop pack edits go through the
+      engine's own parse/validate/hot-load path, the same one the CLI's `validate` uses.
   - [x] Local API disabled by default; requires token when enabled
   - [x] Malformed inbound control message cannot crash the engine
   - [x] Golden rule-pack tests and virtual-device tests cover every MVP trigger/action

@@ -379,7 +379,7 @@ pub fn route(req: &Request, handle: &ServiceHandle, token: &str) -> Outcome {
     let respond = |r: Response| Outcome::Respond(r);
 
     match (segments.as_slice(), method) {
-        (["health"], "GET") => respond(Response::json(200, health(handle))),
+        (["health"], "GET") => respond(Response::json(200, health_json(handle))),
         (["health"], _) => not_allowed(),
         (["rules"], "GET") => {
             let snapshot = handle.snapshot();
@@ -393,7 +393,9 @@ pub fn route(req: &Request, handle: &ServiceHandle, token: &str) -> Outcome {
         (["devices"], _) => not_allowed(),
         (["executions"], "GET") => match filter_from(req) {
             Err(message) => respond(Response::error(400, message)),
-            Ok((filter, limit)) => respond(executions(handle, &filter, limit)),
+            Ok((filter, limit)) => {
+                respond(Response::json(200, executions_json(handle, &filter, limit)))
+            }
         },
         (["executions"], _) => not_allowed(),
         (["incidents"], "GET") => {
@@ -461,7 +463,10 @@ pub fn route(req: &Request, handle: &ServiceHandle, token: &str) -> Outcome {
     }
 }
 
-fn health(handle: &ServiceHandle) -> Value {
+/// The system-status document: overall status, device counts, listener liveness, mode and the
+/// rejected-inbound counters. Served at `/health` and reused by the desktop dashboard, which must
+/// present exactly the same status the API reports (spec §12.1, §14).
+pub fn health_json(handle: &ServiceHandle) -> Value {
     let snapshot = handle.snapshot();
     let count = |h: DeviceHealth| {
         snapshot
@@ -513,12 +518,14 @@ fn health(handle: &ServiceHandle) -> Value {
     })
 }
 
-fn executions(handle: &ServiceHandle, filter: &Filter, limit: usize) -> Response {
+/// Execution history as JSON, through the database when configured and the in-memory ring
+/// otherwise. Shared between `/executions` and the desktop timeline so both always agree.
+pub fn executions_json(handle: &ServiceHandle, filter: &Filter, limit: usize) -> Value {
     if let Some(store) = &handle.store {
         let store = store.lock().unwrap_or_else(|e| e.into_inner());
         return match store.executions(filter, limit) {
-            Ok(records) => Response::json(200, json!({ "executions": records })),
-            Err(e) => Response::error(500, e.to_string()),
+            Ok(records) => json!({ "executions": records }),
+            Err(e) => json!({ "error": e.to_string() }),
         };
     }
     let snapshot = handle.snapshot();
@@ -529,7 +536,7 @@ fn executions(handle: &ServiceHandle, filter: &Filter, limit: usize) -> Response
         .filter(|r| filter.matches(r))
         .take(limit)
         .collect();
-    Response::json(200, json!({ "executions": records }))
+    json!({ "executions": records })
 }
 
 /// Starts the API listener. The bind address was validated to be loopback by the service config.

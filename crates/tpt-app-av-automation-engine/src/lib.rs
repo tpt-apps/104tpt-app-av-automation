@@ -300,8 +300,17 @@ impl Engine {
     /// Kept separate from pack validation because packs are portable while device registries are
     /// per-site (spec §9).
     pub fn check_devices(&self) -> Vec<Diagnostic> {
+        self.check_devices_in(&self.pack)
+    }
+
+    /// The same check for a candidate pack, before it is loaded (used by hot reload).
+    pub fn check_devices_for(&self, pack: &RulePack) -> Vec<Diagnostic> {
+        self.check_devices_in(pack)
+    }
+
+    fn check_devices_in(&self, pack: &RulePack) -> Vec<Diagnostic> {
         let mut out = Vec::new();
-        for (ri, rule) in self.pack.rules.iter().enumerate() {
+        for (ri, rule) in pack.rules.iter().enumerate() {
             let main = rule
                 .actions
                 .iter()

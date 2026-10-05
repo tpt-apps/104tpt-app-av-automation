@@ -15,10 +15,9 @@ Work tracker: [`todo.md`](todo.md)
 
 ## Status
 
-This repository contains the engine, CLI and headless service. **Not built yet:** the Tauri
-desktop application (dashboard, rule builder, device manager, execution log UI), real media actions
-through `tpt-kinetix`/`tpt-cadence`, and Phase 2/3 features. See [`todo.md`](todo.md) for the exact
-state of every item.
+This repository contains the engine, CLI, headless service and the desktop application. **Not built
+yet:** real media actions through `tpt-kinetix`/`tpt-cadence`, and Phase 2/3 features. See
+[`todo.md`](todo.md) for the exact state of every item.
 
 | Area | State |
 |------|-------|
@@ -32,7 +31,7 @@ state of every item.
 | CLI: `validate`, `simulate`, `run`, `watchdog`, `history` | done |
 | Headless service, SQLite persistence, restart-safe one-shots, watchdog | done |
 | Local API (REST + WebSocket), disabled by default, token + loopback only | done |
-| Desktop UI | not started |
+| Desktop UI: dashboard, rule builder, device manager, timeline | done (see below) |
 
 ## Quick start
 
@@ -59,6 +58,21 @@ tpt-av-automation watchdog -- run --service --rules main-hall.yaml --devices dev
 Rules load **disarmed** unless the YAML says `armed: true`; a disarmed rule is evaluated and logged
 but never sends anything.
 
+### Desktop app
+
+The desktop shell embeds the same engine: dashboard with armed states and device health, a visual
+rule builder that round-trips to the pack YAML, a device manager with manual pings, and the
+execution timeline with filters. The LIVE / SIMULATION banner is always on screen.
+
+```sh
+cargo build --manifest-path crates/tpt-app-av-automation-tauri/Cargo.toml   # not in the default workspace
+cargo run --manifest-path crates/tpt-app-av-automation-tauri/Cargo.toml -- rules/main-hall.yaml
+```
+
+A settings file (`tpt-av-automation.yaml`) can name `pack`, `devices` and a `service:` block
+(listeners, API, state database); run with no arguments for a fresh "new show" setup. The desktop
+crate is excluded from the default workspace because it needs the Tauri/WebView2 toolchain.
+
 ### Exit codes (stable)
 
 | Code | Meaning |
@@ -83,9 +97,10 @@ but never sends anything.
 | `devices` | registry, heartbeat health, endpoints (virtual, UDP, MIDI) |
 | `engine` | deterministic evaluation, conflict resolution, cancellation |
 | `report` | human/JSON rendering, exit codes, log filters |
-| `service` | SQLite store, listeners, local API, watchdog |
+| `service` | SQLite store, listeners, local API, watchdog, the desktop UI's command bridge |
 | `cli` | the `tpt-av-automation` binary |
 | `test` | shared fixtures for golden and chaos tests |
+| `tauri` | the desktop app (own manifest; embeds the service) |
 
 Design documents are in [`docs/`](docs/); deployment notes (Windows package, systemd unit) are in
 [`docs/deployment.md`](docs/deployment.md).

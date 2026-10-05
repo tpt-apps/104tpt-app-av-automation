@@ -1,3 +1,8 @@
+# The desktop crate is its own workspace: its build output and the Tauri-generated
+# capability schemas are reproducible and stay out of version control.
+crates/tpt-app-av-automation-tauri/target/
+crates/tpt-app-av-automation-tauri/gen/
+
 /target/
 **/*.rs.bk
 *.pdb

@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>TPT AV Automation</title>
+  <link rel="stylesheet" href="css/app.css" />
+</head>
+<body>
+  <header id="titlebar">
+    <div class="brand">
+      <span class="brand-mark"></span>
+      <span class="brand-name">TPT AV Automation</span>
+      <span class="brand-version" id="app-version"></span>
+    </div>
+    <div id="mode-banner" class="mode-unknown" title="Whether the engine may send real actions">
+      <span id="mode-label">CONNECTING</span>
+    </div>
+    <div class="header-spacer"></div>
+    <div class="header-pack" id="pack-label">&mdash;</div>
+    <div id="status-pill" class="pill pill-unknown" title="Overall system status">unknown</div>
+  </header>
+
+  <nav id="tabs" aria-label="Screens">
+    <button class="tab active" data-view="dashboard">Dashboard</button>
+    <button class="tab" data-view="rules">Rule Builder</button>
+    <button class="tab" data-view="devices">Devices</button>
+    <button class="tab" data-view="timeline">Timeline</button>
+    <button class="tab" data-view="yaml">Pack YAML</button>
+  </nav>
+
+  <main>
+    <!-- ============ Dashboard (spec §12.1) ============ -->
+    <section id="view-dashboard" class="view active">
+      <div class="cards" id="dash-cards">
+        <div class="card" id="card-status">
+          <h3>System status</h3>
+          <div class="card-big" id="dash-status">—</div>
+          <div class="card-sub" id="dash-status-sub"></div>
+          <button class="btn btn-small btn-ghost" id="btn-toggle-sim" style="margin-top:10px"></button>
+        </div>
+        <div class="card">
+          <h3>Rules</h3>
+          <div class="card-big" id="dash-rules">—</div>
+          <div class="card-sub" id="dash-rules-sub"></div>
+        </div>
+        <div class="card">
+          <h3>Devices</h3>
+          <div class="card-big" id="dash-devices">—</div>
+          <div class="card-sub" id="dash-devices-sub"></div>
+        </div>
+        <div class="card">
+          <h3>Active chains</h3>
+          <div class="card-big" id="dash-chains">—</div>
+          <div class="card-sub" id="dash-chains-sub"></div>
+        </div>
+      </div>
+
+      <div class="columns">
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Rules</h2>
+            <span class="hint">armed rules may send real actions</span>
+          </div>
+          <table class="table">
+            <thead>
+              <tr><th>Rule</th><th>Trigger</th><th>Priority</th><th>Armed</th><th></th></tr>
+            </thead>
+            <tbody id="dash-rules-rows"></tbody>
+          </table>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Recent executions</h2>
+            <button class="btn btn-ghost" data-goto="timeline">Open timeline</button>
+          </div>
+          <table class="table">
+            <thead>
+              <tr><th>Time</th><th>Rule</th><th>Status</th><th>Mode</th></tr>
+            </thead>
+            <tbody id="dash-recent-rows"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="panel" id="dash-chains-panel">
+        <div class="panel-head">
+          <h2>Running action chains</h2>
+          <span class="hint">chains can be cancelled by the operator</span>
+        </div>
+        <table class="table">
+          <thead>
+            <tr><th>Execution</th><th>Rule</th><th></th></tr>
+          </thead>
+          <tbody id="dash-chains-rows"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ============ Rule builder (spec §12.2) ============ -->
+    <section id="view-rules" class="view">
+      <div class="rules-layout">
+        <div class="rules-list panel">
+          <div class="panel-head">
+            <h2>Rules</h2>
+            <button class="btn btn-primary" id="btn-new-rule">+ New rule</button>
+          </div>
+          <div id="rule-cards"></div>
+        </div>
+
+        <div class="rule-editor panel" id="rule-editor">
+          <div class="panel-head">
+            <h2 id="editor-title">No rule selected</h2>
+            <div class="row-gap">
+              <button class="btn btn-ghost" id="btn-delete-rule" hidden>Delete</button>
+              <button class="btn btn-primary" id="btn-save-rule" disabled>Save rule</button>
+            </div>
+          </div>
+          <p class="hint" id="editor-empty-hint">
+            Select a rule on the left, or create one with <b>+ New rule</b> — pick a trigger,
+            pick an action, name it. The pack below is the single source of truth; the canvas is a
+            view onto it.
+          </p>
+
+          <div id="editor-form" hidden>
+            <div class="form-grid">
+              <label>Name <input type="text" id="f-name" /></label>
+              <label>Description <input type="text" id="f-description" /></label>
+              <label>Version <input type="number" id="f-version" min="1" step="1" title="Raise the version when editing a rule so it reloads disarmed" /></label>
+              <label>Priority
+                <select id="f-priority">
+                  <option>emergency</option><option>critical</option><option>high</option>
+                  <option selected>normal</option><option>low</option><option>background</option>
+                </select>
+              </label>
+              <label class="span2">Tags (comma separated) <input type="text" id="f-tags" /></label>
+            </div>
+
+            <h3 class="chain-title">Trigger</h3>
+            <div class="chain-box trigger-box">
+              <div id="f-trigger-type-slot"></div>
+              <div id="f-trigger-fields" class="fields"></div>
+            </div>
+
+            <h3 class="chain-title">Conditions <span class="hint">all must pass</span></h3>
+            <div id="f-conditions" class="chain-items"></div>
+            <button class="btn btn-ghost" id="btn-add-condition">+ Add condition</button>
+
+            <h3 class="chain-title">Actions</h3>
+            <div id="f-actions" class="chain-items"></div>
+            <button class="btn btn-ghost" id="btn-add-action">+ Add action</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ Devices (spec §12.3) ============ -->
+    <section id="view-devices" class="view">
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Devices</h2>
+          <span class="hint" id="devices-hint">health comes from inbound traffic and endpoint probes</span>
+        </div>
+        <table class="table">
+          <thead>
+            <tr><th>Health</th><th>Device</th><th>Protocol</th><th>Address</th><th>Last seen</th><th></th></tr>
+          </thead>
+          <tbody id="device-rows"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ============ Timeline (spec §12.4) ============ -->
+    <section id="view-timeline" class="view">
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Executions</h2>
+          <div class="filters">
+            <input type="text" id="flt-rule" placeholder="rule id" />
+            <input type="text" id="flt-device" placeholder="device" />
+            <select id="flt-status">
+              <option value="">any status</option>
+              <option value="success">success</option>
+              <option value="partial">partial</option>
+              <option value="failure">failure</option>
+              <option value="cancelled">cancelled</option>
+            </select>
+            <select id="flt-simulated">
+              <option value="">live + simulated</option>
+              <option value="false">live only</option>
+              <option value="true">simulated only</option>
+            </select>
+            <label class="filter-date">from <input type="datetime-local" id="flt-since" /></label>
+            <label class="filter-date">to <input type="datetime-local" id="flt-until" /></label>
+            <input type="number" id="flt-limit" value="100" min="1" max="1000" title="Maximum rows" />
+            <button class="btn btn-ghost" id="btn-flt-apply">Apply</button>
+          </div>
+        </div>
+        <table class="table row-select">
+          <thead>
+            <tr><th>Time</th><th>Rule</th><th>Status</th><th>Actions</th><th>Duration</th><th>Mode</th></tr>
+          </thead>
+          <tbody id="exec-rows"></tbody>
+        </table>
+        <div id="exec-detail" class="exec-detail" hidden></div>
+      </div>
+
+      <div class="columns">
+        <div class="panel">
+          <div class="panel-head"><h2>Incident log</h2></div>
+          <table class="table">
+            <thead><tr><th>Time</th><th>Rule</th><th>Severity</th><th>Message</th></tr></thead>
+            <tbody id="incident-rows"></tbody>
+          </table>
+        </div>
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Pack history</h2>
+            <span class="hint">every applied pack is versioned</span>
+          </div>
+          <table class="table">
+            <thead><tr><th>Saved</th><th>Name</th><th>Revision</th><th></th></tr></thead>
+            <tbody id="history-rows"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ Pack YAML (spec §12.2 text view) ============ -->
+    <section id="view-yaml" class="view">
+      <div class="panel yaml-panel">
+        <div class="panel-head">
+          <h2>Pack YAML</h2>
+          <div class="row-gap">
+            <button class="btn btn-ghost" id="btn-yaml-reload">Reload</button>
+            <button class="btn btn-ghost" id="btn-yaml-save">Save to file</button>
+            <button class="btn btn-ghost" id="btn-yaml-validate">Validate</button>
+            <button class="btn btn-primary" id="btn-yaml-apply">Apply</button>
+          </div>
+        </div>
+        <p class="hint" id="yaml-file-hint"></p>
+        <textarea id="yaml-editor" spellcheck="false"></textarea>
+        <div id="yaml-result" class="yaml-result" hidden></div>
+      </div>
+    </section>
+  </main>
+
+  <div id="toasts"></div>
+
+  <dialog id="new-rule-dialog">
+    <form method="dialog" class="dialog-body">
+      <h2>New rule</h2>
+      <label>Name <input type="text" id="nr-name" placeholder="House lights to half" /></label>
+      <label>Trigger
+        <select id="nr-trigger"></select>
+      </label>
+      <p class="hint" id="nr-trigger-hint"></p>
+      <label>Action
+        <select id="nr-action"></select>
+      </label>
+      <p class="hint" id="nr-action-hint"></p>
+      <label>Device
+        <select id="nr-device"></select>
+      </label>
+      <div class="dialog-actions">
+        <button type="button" class="btn btn-ghost" id="nr-cancel">Cancel</button>
+        <button type="button" class="btn btn-primary" id="nr-create">Create rule</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="js/format.js"></script>
+  <script src="js/demo.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

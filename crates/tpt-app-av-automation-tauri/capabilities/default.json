@@ -1,0 +1,6 @@
+{
+  "identifier": "default",
+  "description": "The main window may invoke the application's own commands and listen to its events. No filesystem, shell or network plugins are exposed to the webview.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}
