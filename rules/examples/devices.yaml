@@ -24,6 +24,14 @@ devices:
     kind: switcher
     protocol: osc
     address: 127.0.0.1:9001
+  - id: media-server
+    name: Media Server
+    kind: media
+    protocol: media
+    address: 127.0.0.1:9002
+    media:
+      video: /media/video/{source}/{operation}
+      audio: /media/audio/{from}/{to}/{operation}
   - id: display-1
     name: Main Display
     kind: display

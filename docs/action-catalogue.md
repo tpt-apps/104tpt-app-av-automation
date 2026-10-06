@@ -49,11 +49,28 @@ not on the allow-list, or a non-zero exit, is a `failed` step.
 ## Media
 
 `media.*` actions are routed to the endpoint bound to `device`, exactly like control actions, and
-simulate correctly. **No endpoint implements them yet**: the `tpt-kinetix` and `tpt-cadence`
-repositories are codec/pipeline libraries without a source-control API to call, so the UDP and MIDI
-endpoints reject these commands (`failed`, never silently "ok"). The `virtual` endpoint records them,
-which is what the test suite uses. A kinetix-backed `Endpoint` implementation is the integration
-point (`devices::Endpoint`).
+simulate correctly. The `media` device protocol delivers them as OSC to a media server, matrix or
+router, at addresses you can template per device:
+
+```yaml
+# devices.yaml
+- id: switcher
+  protocol: media
+  address: 192.168.1.40:8000
+  media:                                   # optional; these are the defaults
+    video: /media/video/{source}/{operation}
+    audio: /media/audio/{from}/{to}/{operation}
+```
+
+`{operation}` expands to `start`, `stop` or `switch`. Names substituted into an address must be a
+single plain segment: empty names and names containing `/ # * ? , [ ] { }` or whitespace are rejected
+(`failed`) rather than altering the meaning of the OSC address. Templates are checked when
+`devices.yaml` loads.
+
+This does **not** use `tpt-kinetix` or `tpt-cadence`, which are codec/pipeline libraries without a
+source-control API. Other endpoints (UDP control, MIDI) still reject `media.*` (`failed`, never
+silently "ok"); the `virtual` endpoint records them. Verified over a real UDP socket by the devices
+and actions tests; **not tested against a real media server**.
 
 ## Not yet implemented
 

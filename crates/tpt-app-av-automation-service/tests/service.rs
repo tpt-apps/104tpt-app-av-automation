@@ -455,10 +455,12 @@ fn flooding_sources_are_rate_limited() {
     let running = Running::start(build(PACK, c, None, Arc::new(SystemClock)));
     let sender = UdpSocket::bind("127.0.0.1:0").unwrap();
     let packet = osc_packet("/flood", &[]);
-    for _ in 0..3000 {
-        let _ = sender.send_to(&packet, ("127.0.0.1", port));
-    }
+    // Keep flooding until the limiter engages: the listener binds on its own thread, so a single
+    // burst sent before it is ready is lost to the kernel and would never be counted.
     wait_until("the limiter to engage", || {
+        for _ in 0..3000 {
+            let _ = sender.send_to(&packet, ("127.0.0.1", port));
+        }
         running.handle.rejected_counts().1 > 0
     });
 }

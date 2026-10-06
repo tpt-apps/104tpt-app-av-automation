@@ -15,6 +15,7 @@ pub mod command;
 pub mod config;
 pub mod dmx_serial;
 pub mod endpoint;
+pub mod media;
 pub mod midi_port;
 pub mod net;
 pub mod registry;
@@ -27,6 +28,7 @@ pub use dmx_serial::{
     DmxSerialPort, DmxSerialReader, TimedByte,
 };
 pub use endpoint::{Endpoint, EndpointError, Faults, VirtualEndpoint};
+pub use media::{MediaEndpoint, MediaTemplates};
 pub use net::{build_endpoint, MidiEndpoint, MidiOpener, MidiWriter, UdpEndpoint, UdpProtocol};
 pub use registry::{Device, DeviceKind, DeviceRegistry, ProtocolBinding};
 pub use ump::UmpEndpoint;

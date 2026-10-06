@@ -1,0 +1,24 @@
+# Media actions: an OSC cue switches a video source and routes audio on a `media` device.
+# Needs the `media-server` entry from devices.yaml. Loads disarmed.
+format_version: 1
+name: Media Switch
+revision: 1
+rules:
+  - id: show-media
+    name: Show media
+    armed: false
+    trigger:
+      type: osc
+      address: /cue/media
+    actions:
+      - id: camera
+        type: media.video_source
+        device: media-server
+        source: cam1
+        operation: switch
+      - id: desk-to-house
+        type: media.audio_route
+        device: media-server
+        from: desk
+        to: house
+        operation: start

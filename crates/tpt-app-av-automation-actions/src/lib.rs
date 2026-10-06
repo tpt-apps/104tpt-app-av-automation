@@ -337,6 +337,33 @@ mod tests {
     }
 
     #[test]
+    fn a_media_action_reaches_a_media_device_as_osc() {
+        use std::net::UdpSocket;
+        use std::time::Duration;
+        use tpt_app_av_automation_devices::MediaEndpoint;
+        use tpt_app_av_automation_model::MediaOperation;
+
+        let rx = UdpSocket::bind("127.0.0.1:0").unwrap();
+        rx.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
+        let (mut actions, _, _) = setup();
+        let ep = MediaEndpoint::new(&rx.local_addr().unwrap().to_string(), None).unwrap();
+        actions.bind_endpoint("media", Arc::new(ep));
+        let step = ActionStep::new(
+            "m1",
+            ActionSpec::MediaVideoSource {
+                source: "cam2".into(),
+                operation: MediaOperation::Start,
+            },
+        )
+        .targeting("media");
+        let r = actions.execute(&step, &step.spec, &ctx(), None, &CancelToken::new());
+        assert_eq!(r.outcome, ActionOutcome::Success);
+        let mut buf = [0u8; 256];
+        let n = rx.recv(&mut buf).unwrap();
+        assert!(buf[..n].starts_with(b"/media/video/cam2/start "));
+    }
+
+    #[test]
     fn simulate_has_no_side_effects_and_describes_the_step() {
         let (actions, ep, sink) = setup();
         let step = osc_step();

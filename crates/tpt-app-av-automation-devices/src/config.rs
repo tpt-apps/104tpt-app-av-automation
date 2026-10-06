@@ -31,7 +31,7 @@ pub struct DeviceConfig {
     /// Category.
     #[serde(default)]
     pub kind: DeviceKind,
-    /// `osc`, `artnet`, `sacn`, `midi`, `ump`, `dmx512` or `virtual`.
+    /// `osc`, `artnet`, `sacn`, `midi`, `ump`, `dmx512`, `media` or `virtual`.
     pub protocol: String,
     /// `host:port` for network protocols, (part of) the MIDI port name, or the serial port name
     /// (e.g. `COM3` or `/dev/ttyUSB0`) for `dmx512`.
@@ -43,6 +43,9 @@ pub struct DeviceConfig {
     /// DMX scene table.
     #[serde(default)]
     pub scenes: BTreeMap<String, SceneDef>,
+    /// OSC address templates for a `media` device; defaults apply when absent.
+    #[serde(default)]
+    pub media: Option<crate::media::MediaTemplates>,
 }
 
 impl DeviceConfig {
@@ -70,7 +73,9 @@ pub struct DeviceFile {
     pub devices: Vec<DeviceConfig>,
 }
 
-const PROTOCOLS: [&str; 7] = ["osc", "artnet", "sacn", "midi", "ump", "dmx512", "virtual"];
+const PROTOCOLS: [&str; 8] = [
+    "osc", "artnet", "sacn", "midi", "ump", "dmx512", "media", "virtual",
+];
 
 impl DeviceFile {
     /// Parses YAML; a malformed document is a parse error, never a panic.
@@ -112,8 +117,10 @@ impl DeviceFile {
                     ),
                 ));
             }
-            if matches!(d.protocol.as_str(), "osc" | "artnet" | "sacn" | "ump")
-                && d.address.is_none()
+            if matches!(
+                d.protocol.as_str(),
+                "osc" | "artnet" | "sacn" | "ump" | "media"
+            ) && d.address.is_none()
             {
                 out.push(Diagnostic::error(
                     format!("{loc}.address"),
@@ -131,6 +138,17 @@ impl DeviceFile {
                     format!("{loc}.address"),
                     "`dmx512` devices need `address` set to the serial port name, e.g. COM3 or /dev/ttyUSB0",
                 ));
+            }
+            if let Some(templates) = &d.media {
+                if d.protocol != "media" {
+                    out.push(Diagnostic::error(
+                        format!("{loc}.media"),
+                        "`media` templates apply to `media` devices only",
+                    ));
+                }
+                for message in templates.problems() {
+                    out.push(Diagnostic::error(format!("{loc}.media"), message));
+                }
             }
             for (name, scene) in &d.scenes {
                 if usize::from(scene.start_channel) + scene.values.len() > 512 {

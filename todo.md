@@ -90,7 +90,10 @@ Phase 4 and 5 are untouched.
 - [x] Implement log-incident action (§8.3)
   - _Status:_ persisted to SQLite and exposed at `GET /incidents`.
 - [ ] Integrate `tpt-kinetix` for media start/stop/switch actions (§5.1, §8.2)
-  - _Status:_ not integrated: `tpt-kinetix` is a codec/pipeline library with no source start/stop/switch API. `media.*` actions are parsed, validated, simulated and routed to an `Endpoint`, but no backend implements them (they fail loudly). See `docs/integrations.md`.
+  - _Status:_ `tpt-kinetix` itself is not integrated, but media actions now have a working backend:
+    a `media` device sends them as OSC at templated addresses (`devices::media`, tested over a real
+    UDP socket, including through the action dispatcher). Not tested against a real media server.
+    Original gap: `tpt-kinetix` is a codec/pipeline library with no source start/stop/switch API. `media.*` actions are parsed, validated, simulated and routed to an `Endpoint`, but no backend implements them (they fail loudly). See `docs/integrations.md`.
 - [x] Implement SQLite persistence for rule packs + version history, device registry, execution history, user preferences (§15)
 - [x] Implement headless service/daemon mode (§3.6, §11)
 - [x] Implement lightweight watchdog process supervising the engine (§11)
@@ -203,7 +206,7 @@ Phase 4 and 5 are untouched.
     `listeners: {expected, live, lost}` and drops to `degraded` when one is lost. The remaining
     `expect`s are in the test-rig crates and in provably-unreachable post-check positions.
 - [x] Package Windows release
-  - _Status:_ `scripts/package-windows.ps1` builds a static-CRT zip with SHA-256 and smoke-tests it; unsigned, no installer or Windows-service wrapper.
+  - _Status:_ `scripts/package-windows.ps1` builds a static-CRT zip with SHA-256 and smoke-tests it; unsigned, no installer. The zip includes `install-windows-service.ps1` (boot-time scheduled task running the watchdog; not a native service, not run on a clean machine).
 - [ ] Validate headless Linux service deployment
   - _Status:_ unit file and docs written (`scripts/tpt-av-automation.service`); CI now runs
     `systemd-analyze verify` on it on every push, but no real Linux host has run the service.
@@ -221,8 +224,9 @@ Phase 4 and 5 are untouched.
     - _Status:_ watchdog kill test + write-ahead state + restart tests; the kill-during-a-one-shot combination is verified by its parts, not as one automated scenario.
   - [ ] OSC, MIDI, and at least one of DMX/Art-Net/sACN trigger and are triggered end to end
     - _Status:_ OSC and Art-Net are verified end to end over sockets (in and out); MIDI logic is tested but no physical MIDI port has been exercised.
-  - [ ] Media action starts/stops/switches a source via `tpt-kinetix`
-    - _Status:_ see the `tpt-kinetix` item above.
+  - [x] Media action starts/stops/switches a source
+    - _Status:_ via a `media` device (OSC), **not** `tpt-kinetix`; the spec's wording named kinetix,
+      which has no control API. Verified on a loopback socket only.
   - [x] Device health (online/degraded/offline) tracked and can itself trigger a rule
   - [x] Every execution logged with trigger detail, condition results, per-action outcomes
   - [x] Partially failed action chain reported as partial failure, never full success

@@ -37,6 +37,7 @@ Copy-Item "target/package/release/tpt-av-automation.exe" $stage
 foreach ($file in "README.md", "CHANGELOG.md", "LICENSE-MIT", "LICENSE-APACHE") {
     Copy-Item $file $stage
 }
+Copy-Item "scripts/install-windows-service.ps1" $stage
 Copy-Item -Recurse "rules" (Join-Path $stage "rules")
 Copy-Item -Recurse "docs" (Join-Path $stage "docs")
 

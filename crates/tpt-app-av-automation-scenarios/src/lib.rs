@@ -57,11 +57,14 @@ pub fn cli_bin() -> PathBuf {
         .parent()
         .and_then(|p| p.parent())
         .expect("workspace root");
-    let debug = workspace.join("target/debug").join(exe);
+    let target = std::env::var_os("CARGO_TARGET_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| workspace.join("target"));
+    let debug = target.join("debug").join(exe);
     if debug.exists() {
         return debug;
     }
-    let release = workspace.join("target/release").join(exe);
+    let release = target.join("release").join(exe);
     if release.exists() {
         return release;
     }

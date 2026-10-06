@@ -400,6 +400,9 @@ pub fn build_endpoint(config: &DeviceConfig) -> Result<Box<dyn Endpoint>> {
                 config.scenes.clone(),
             )))
         }
+        "media" => crate::media::MediaEndpoint::new(&address, config.media.clone())
+            .map(|e| Box::new(e) as Box<dyn Endpoint>)
+            .map_err(|e| Error::Control(format!("device `{}`: {e}", config.id))),
         "virtual" => Ok(Box::new(VirtualEndpoint::new())),
         other => Err(Error::Control(format!(
             "device `{}`: unknown protocol `{other}`",
@@ -670,8 +673,9 @@ mod tests {
             address: Some("127.0.0.1:9".into()),
             heartbeat_ms: None,
             scenes: BTreeMap::new(),
+            media: None,
         };
-        for p in ["osc", "artnet", "sacn", "midi", "virtual"] {
+        for p in ["osc", "artnet", "sacn", "midi", "media", "virtual"] {
             assert!(build_endpoint(&cfg(p)).is_ok(), "{p}");
         }
         assert!(build_endpoint(&cfg("bogus")).is_err());
@@ -687,6 +691,7 @@ mod tests {
             address: Some("COM3".into()),
             heartbeat_ms: None,
             scenes: BTreeMap::new(),
+            media: None,
         };
         assert!(
             build_endpoint(&base).is_ok(),

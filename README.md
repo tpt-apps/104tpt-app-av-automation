@@ -16,7 +16,7 @@ Work tracker: [`todo.md`](todo.md)
 ## Status
 
 This repository contains the engine, CLI, headless service and the desktop application. **Not built
-yet:** real media actions through `tpt-kinetix`/`tpt-cadence`, and Phase 2/3 features. See
+yet:** media actions through `tpt-kinetix`/`tpt-cadence` (media actions go out as OSC instead), and Phase 2/3 features. See
 [`todo.md`](todo.md) for the exact state of every item.
 
 | Area | State |
@@ -27,7 +27,7 @@ yet:** real media actions through `tpt-kinetix`/`tpt-cadence`, and Phase 2/3 fea
 | Actions: OSC, MIDI, DMX/Art-Net/sACN/serial DMX512, notify, incident log, wait, invoke rule, sandboxed exec | done |
 | MIDI ports (live in/out by name via `midir`) | implemented, **not tested against hardware** |
 | DMX512 serial output (`dmx512` devices, `serialport`) | implemented, **not tested against a physical adapter** |
-| Media actions (`media.video_source`, `media.audio_route`) | parsed, simulated, routed to an endpoint — **no real media backend yet** |
+| Media actions (`media.video_source`, `media.audio_route`) | sent as OSC by a `media` device (templated addresses); **not tested against a real media server**, no `tpt-kinetix` backend |
 | CLI: `validate`, `simulate`, `run`, `watchdog`, `history` | done |
 | Headless service, SQLite persistence, restart-safe one-shots, watchdog | done |
 | Local API (REST + WebSocket), disabled by default, token + loopback only | done |

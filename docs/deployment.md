@@ -22,8 +22,17 @@ tpt-av-automation watchdog -- run --service --rules main-hall.yaml --devices dev
     --config service.yaml --state-dir C:\ProgramData\TptAvAutomation
 ```
 
-Run that under the Windows Task Scheduler ("At startup", "Run whether user is logged on or not") or a
-service wrapper of your choice; a native Windows-service integration is not built yet.
+The package ships `install-windows-service.ps1`, which registers that command as a Task Scheduler
+task that starts at boot as SYSTEM, whether or not anyone is logged on, and is retried every minute
+if it exits (run from an elevated PowerShell; `-Uninstall` removes it):
+
+```powershell
+./install-windows-service.ps1 -Rules C:\show\main-hall.yaml -Devices C:\show\devices.yaml
+```
+
+This is a scheduled task, not a native Windows service: it does not appear in `services.msc`.
+**Not yet exercised on a clean machine.** The executable and scripts are unsigned, so SmartScreen
+will warn on first run (`Unblock-File` or "Run anyway").
 
 ## Linux (headless, rack-mounted)
 

@@ -9,7 +9,7 @@
 | `tpt-av-control-dmx` | ArtDmx and E1.31 packet build/parse | integrated |
 | `serialport` (third party) | DMX512-A framing over a serial adapter, in both directions | integrated. **Not tested against hardware** — CI has no USB-to-DMX adapter |
 | `tpt-av-control-utils` | shared error type | transitively |
-| `tpt-kinetix` | media start/stop/switch | **not integrated** — it is a codec/pipeline library with no source-control API to call |
+| `tpt-kinetix` | media start/stop/switch | **not integrated** — it is a codec/pipeline library with no source-control API to call. `media.*` actions are delivered by the `media` device protocol as templated OSC instead (see `action-catalogue.md`) |
 | `tpt-cadence` | audio routing | not integrated |
 | `tpt-visual`, `tpt-audio`/`tpt-dsp`, `tpt-av-sync` | signal-condition triggers | Phase 2 |
 | `tpt-av-asset` | watch folders, jobs | Phase 2 |

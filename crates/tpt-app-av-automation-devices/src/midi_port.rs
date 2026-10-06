@@ -124,4 +124,45 @@ mod tests {
         let _ = output_port_names();
         let _ = input_port_names();
     }
+
+    /// Real-port round trip. Opt in with `TPT_MIDI_LOOPBACK_OUT` / `TPT_MIDI_LOOPBACK_IN` (name
+    /// fragments of two ports joined by a loopback driver) and `--ignored`; CI has no MIDI ports.
+    #[test]
+    #[ignore = "needs a MIDI loopback pair; set TPT_MIDI_LOOPBACK_OUT and TPT_MIDI_LOOPBACK_IN"]
+    fn a_message_survives_a_real_loopback_port_pair() {
+        use std::sync::mpsc;
+        use std::time::Duration;
+        println!("outputs: {:?}", output_port_names());
+        println!("inputs:  {:?}", input_port_names());
+        let (Ok(out), Ok(inp)) = (
+            std::env::var("TPT_MIDI_LOOPBACK_OUT"),
+            std::env::var("TPT_MIDI_LOOPBACK_IN"),
+        ) else {
+            panic!("set TPT_MIDI_LOOPBACK_OUT and TPT_MIDI_LOOPBACK_IN");
+        };
+        let (tx, rx) = mpsc::channel();
+        let _input = open_input(&inp, move |bytes| {
+            let _ = tx.send(bytes.to_vec());
+        })
+        .expect("open input");
+        let mut writer = open_output(&out).expect("open output");
+        writer.write(&[0x90, 60, 100]).expect("write");
+        let got = rx
+            .recv_timeout(Duration::from_secs(3))
+            .expect("no message came back");
+        assert_eq!(got, vec![0x90, 60, 100]);
+    }
+
+    /// Sends a real note to a real output port (e.g. `TPT_MIDI_OUT=Wavetable` on Windows, which
+    /// sounds the built-in synth). Opt in with `--ignored`.
+    #[test]
+    #[ignore = "needs a MIDI output port; set TPT_MIDI_OUT to a name fragment"]
+    fn a_real_output_port_accepts_messages_and_reports_a_missing_one() {
+        let name = std::env::var("TPT_MIDI_OUT").expect("set TPT_MIDI_OUT");
+        let mut writer = open_output(&name).expect("open output");
+        writer.write(&[0x90, 60, 100]).expect("note on");
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        writer.write(&[0x80, 60, 0]).expect("note off");
+        assert!(open_output("no-such-port-xyz").is_err());
+    }
 }

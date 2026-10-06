@@ -25,6 +25,9 @@
     "active": true,
     "targets": ["nsis", "msi"],
     "icon": ["icons/icon.ico"],
+    "windows": {
+      "webviewInstallMode": { "type": "offlineInstaller" }
+    },
     "category": "Developer Tool",
     "shortDescription": "Offline-first AV show automation",
     "longDescription": "TPT AV Automation — offline-first automation and orchestration for professional AV, live production and media-pipeline workflows. Deterministic, versioned rule packs; simulation before showtime; reliability as a feature."

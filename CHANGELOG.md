@@ -7,6 +7,9 @@ released. The CLI exit-code contract (0–6) and the `format_version: 1` rule fo
 ## [Unreleased]
 
 ### Added
+- `media` device protocol: `media.video_source` / `media.audio_route` delivered as OSC at
+  per-device address templates, with address-segment validation.
+- `scripts/install-windows-service.ps1`: registers the watchdog as a boot-time scheduled task.
 - Rule pack model, YAML format and validation (`model`).
 - Deterministic engine: priority-ordered matching, three-valued conditions, conflict resolution,
   failure policies with fallback, per-step and chain timeouts, operator cancellation, nested rule
