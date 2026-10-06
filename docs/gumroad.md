@@ -33,6 +33,7 @@ Items in `[BRACKETS]` are decisions or assets you still need to supply.
 |-------|-------|
 | **Name** | TPT AV Automation |
 | **URL slug** | `tpt-av-automation` |
+| **Live URL** | https://tpt12.gumroad.com/l/tpt-av-automation |
 | **Price** | Three tiers, see below (spec.txt �2.1). Same installer in every tier |
 | **Category** | Software / Business & Money, or Audio & Video tools |
 | **Tags** | av, live production, automation, osc, midi, dmx, art-net, sacn, show control, offline |
