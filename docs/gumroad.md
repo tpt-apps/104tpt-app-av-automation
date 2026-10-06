@@ -33,10 +33,30 @@ Items in `[BRACKETS]` are decisions or assets you still need to supply.
 |-------|-------|
 | **Name** | TPT AV Automation |
 | **URL slug** | `tpt-av-automation` |
-| **Price** | `[PRICE]` (consider "pay what you want" with a minimum, since the source is open) |
+| **Price** | Three tiers, see below (spec.txt §2.1). Same installer in every tier |
 | **Category** | Software / Business & Money, or Audio & Video tools |
 | **Tags** | av, live production, automation, osc, midi, dmx, art-net, sacn, show control, offline |
 | **Summary** (shown under the title, ~1 line) | Offline-first show automation for AV: WHEN something happens, IF conditions hold, THEN run an auditable sequence, with no programmer in the room. |
+
+
+### Pricing tiers
+
+Prices come from the spec's pricing hypothesis (spec.txt §2.1) and are **unvalidated**. Sell them as
+three Gumroad products (or three versions of one product). There is no licence check, so the tiers
+differ in licensed scope and support, not in features.
+
+| Tier | Price | Licensed scope | Intended buyer |
+|------|-------|----------------|----------------|
+| Standalone | $999 | One room or venue, one operator | Single venue |
+| Studio | $2,499 | Multiple rooms in one facility, small integration team | Integration team |
+| Facility / Enterprise | $4,999+ | Multi-site, integrator-managed deployments | Integrators, multi-site |
+
+- Perpetual licence, no subscription and no cloud costs. Paid major-version upgrades and support
+  contracts can come later.
+- Audience: the Gumroad listing on the website sells a supported, ready-to-install product to
+  professional buyers. The open-source repo is a separate audience of people who find the source and
+  build it themselves. The tiers are not aimed at them.
+- `[Decide what each tier includes for support, e.g. email response time, onboarding call]`
 
 ---
 
@@ -88,7 +108,8 @@ it for a paid show.
 
 ### Open source
 The source is dual-licensed MIT or Apache-2.0: `[REPO URL]`. Buying here gets you the prebuilt
-installer and supports development. You are always free to build it yourself.
+installer, the licensed scope of your tier, support and updates. You are free to build it yourself,
+but that comes without a supported installer.
 
 ### Windows SmartScreen note
 The installer is not code-signed, so Windows may show "Windows protected your PC".
@@ -163,7 +184,7 @@ Version: 0.1.0
 
 - [ ] Installer tested on a clean machine
 - [ ] SHA-256 pasted in section 6
-- [ ] Price, support email and refund policy filled in
+- [ ] Tier prices validated, tier support terms, support email and refund policy filled in
 - [ ] Cover, thumbnail and screenshots uploaded
 - [ ] Content file attached and the "preview" or "view product" page checked
 - [ ] Test purchase with a 100% discount code to check the delivery email and the download
