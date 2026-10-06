@@ -35,7 +35,10 @@ listeners:
 Both connect lazily and keep retrying, so a replugged interface recovers without restarting the
 engine. The encoding, range validation, reconnect logic and "no such port" paths are unit-tested;
 sending to and receiving from a physical MIDI interface has **not** been verified in an automated
-test, because CI has none.
+test, because CI has none. Two opt-in tests (`--ignored`) cover real ports: a note sent to the
+Windows built-in GS Wavetable Synth (`TPT_MIDI_OUT=Wavetable`, passes), and a loopback round trip
+(`TPT_MIDI_LOOPBACK_OUT`/`_IN`, needs a loopback driver such as loopMIDI, not yet run). No external
+MIDI interface or DMX adapter has been tried.
 
 ## DMX512 serial, in and out
 

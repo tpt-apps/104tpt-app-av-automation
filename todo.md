@@ -207,9 +207,12 @@ Phase 4 and 5 are untouched.
     `expect`s are in the test-rig crates and in provably-unreachable post-check positions.
 - [x] Package Windows release
   - _Status:_ `scripts/package-windows.ps1` builds a static-CRT zip with SHA-256 and smoke-tests it; unsigned, no installer. The zip includes `install-windows-service.ps1` (boot-time scheduled task running the watchdog; not a native service, not run on a clean machine).
-- [ ] Validate headless Linux service deployment
-  - _Status:_ unit file and docs written (`scripts/tpt-av-automation.service`); CI now runs
-    `systemd-analyze verify` on it on every push, but no real Linux host has run the service.
+- [x] Validate headless Linux service deployment
+  - _Status:_ validated on Ubuntu 24.04 under WSL2 with real systemd: the full workspace test suite
+    passes on Linux, and the unit was installed as user `tptav` and exercised. The API answered
+    `nominal`; `kill -9` of the engine was recovered by the watchdog; `kill -9` of the watchdog was
+    recovered by systemd (`NRestarts=1`); `systemctl stop` exited cleanly. Not a bare-metal rack
+    host, and WSL2's kernel differs from a typical server's.
 - [ ] Test clean-machine installation (no dev tooling required)
   - _Status:_ the package imports only always-present Windows DLLs, but it has not been tried on a fresh machine/VM.
 - [ ] Verify Definition of Done checklist (§24):

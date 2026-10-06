@@ -41,7 +41,9 @@ repository must be checked out beside this one), then use
 [`scripts/tpt-av-automation.service`](../scripts/tpt-av-automation.service), a hardened systemd unit
 that runs the watchdog, which runs the engine.
 
-**Status:** the unit file and the code paths it relies on (the watchdog, `--state-dir`, signal
+**Status:** validated on Ubuntu 24.04 under WSL2 with real systemd (full test suite on Linux; kill
+engine -> watchdog restart; kill watchdog -> systemd restart; clean `systemctl stop`). Not yet run on
+a bare-metal host. Original notes: the unit file and the code paths it relies on (the watchdog, `--state-dir`, signal
 handling through `ctrlc` with the `termination` feature so `SIGTERM` stops the engine cleanly) are
 written, but **not validated on a Linux host** — the development machine is Windows. The unit-test and
 integration suites are written to be portable (no Windows-only APIs outside `cfg(windows)` helpers), but
