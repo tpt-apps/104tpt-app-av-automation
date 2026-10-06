@@ -13,22 +13,26 @@ use std::sync::{Mutex, MutexGuard, OnceLock};
 use std::time::Duration;
 
 use tpt_app_av_automation_scenarios::{
-    http_get, reserve_udp_port, wait_until, Engine, TempDir, PATIENCE, TOKEN,
+    http_get, reserve_tcp_port, reserve_udp_port, wait_until, Engine, TempDir, PATIENCE, TOKEN,
 };
 use tpt_av_control_dmx::artnet::build_artdmx;
 use tpt_av_control_osc::OscMessage;
 
-/// Polls `/health` until it answers `200`, or `BOOT_TIMEOUT` passes.
+/// Polls `/health` until it answers `200`.
 ///
-/// Deliberately short: this is only about waiting for a local process to bind its sockets, so a
-/// failure here means the engine exited (most likely a port collision) and the caller should retry
-/// with fresh ports rather than sit out a long timeout.
-fn wait_for_api(api: &str) -> bool {
-    const BOOT_TIMEOUT: Duration = Duration::from_secs(5);
+/// A process that has exited (almost certainly a port collision) is reported at once so the caller
+/// can retry with fresh ports. A process that is still alive is given a generous time to boot,
+/// because under `cargo test --workspace` dozens of test binaries start processes at the same time
+/// and a cold start on a loaded Windows machine can take well over the time it takes when idle.
+fn wait_for_api(api: &str, engine: &mut Engine) -> bool {
+    const BOOT_TIMEOUT: Duration = Duration::from_secs(30);
     let deadline = std::time::Instant::now() + BOOT_TIMEOUT;
     while std::time::Instant::now() < deadline {
         if http_get(api, "/health", TOKEN).0 == 200 {
             return true;
+        }
+        if !engine.is_running() {
+            return false;
         }
         std::thread::sleep(Duration::from_millis(25));
     }
@@ -93,11 +97,13 @@ impl Fixture {
             // Hold all three reservations at once so the numbers are distinct from each other and
             // from any other scenario running concurrently, then release them before the engine
             // binds them.
-            let guards = [reserve_udp_port(), reserve_udp_port(), reserve_udp_port()];
+            let guards = [reserve_udp_port(), reserve_udp_port()];
+            let api_guard = reserve_tcp_port();
             let osc_port = guards[0].port();
             let artnet_port = guards[1].port();
-            let api_port = guards[2].port();
+            let api_port = api_guard.port();
             drop(guards);
+            drop(api_guard);
 
             let api_addr = format!("127.0.0.1:{api_port}");
             let config = dir.write(
@@ -125,19 +131,22 @@ impl Fixture {
                 "--state-dir",
                 state.to_str().unwrap(),
             ]);
-            let fixture = Self {
+            let mut fixture = Self {
                 _dir: dir,
                 engine,
                 osc_port,
                 artnet_port,
                 api: api_addr,
             };
-            // A local process binds its listeners in well under a second; if the API has not
-            // answered by then the engine exited, almost certainly on a port collision.
-            if wait_for_api(&fixture.api) {
+            // If the engine exits before answering it lost a port race; retry with new ports.
+            if wait_for_api(&fixture.api, &mut fixture.engine) {
                 return fixture;
             }
-            last_error = "the API never answered".into();
+            last_error = if fixture.engine.is_running() {
+                "the API never answered within the boot timeout".into()
+            } else {
+                format!("the engine exited: {}", fixture.engine.exit_report())
+            };
         }
         panic!("the engine never became ready after 4 attempts: {last_error}");
     }

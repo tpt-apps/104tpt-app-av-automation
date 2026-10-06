@@ -18,7 +18,7 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
-use std::net::UdpSocket;
+use std::net::{TcpListener, UdpSocket};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Output, Stdio};
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -201,6 +201,22 @@ impl Engine {
         self.exit_code_if_exited().is_none()
     }
 
+    /// For a process that has already exited: its exit code and everything it wrote to stderr, for
+    /// diagnosing why a scenario's engine would not start.
+    pub fn exit_report(&mut self) -> String {
+        match self.child.take() {
+            Some(child) => match child.wait_with_output() {
+                Ok(out) => format!(
+                    "exit code {:?}, stderr: {}",
+                    out.status.code(),
+                    String::from_utf8_lossy(&out.stderr).trim()
+                ),
+                Err(e) => format!("could not collect the exit report: {e}"),
+            },
+            None => "no process".into(),
+        }
+    }
+
     /// The exit code if the process has already exited, else `None`.
     pub fn exit_code_if_exited(&mut self) -> Option<i32> {
         let status = self.child.as_mut()?.try_wait().ok().flatten()?;
@@ -234,6 +250,33 @@ impl UdpPortGuard {
     /// The reserved port number.
     pub fn port(&self) -> u16 {
         self.socket
+            .local_addr()
+            .expect("read the ephemeral port")
+            .port()
+    }
+}
+
+/// Reserves a loopback TCP port, for a config that names a TCP listener such as the local API.
+///
+/// A UDP reservation is not a substitute: Windows excludes ranges of TCP ports (Hyper-V and WSL
+/// reserve them), and an ephemeral UDP port number can fall inside one, so binding it for TCP fails
+/// with "forbidden by its access permissions" (os error 10013). Asking the OS for a TCP port
+/// directly never returns an excluded one.
+pub fn reserve_tcp_port() -> TcpPortGuard {
+    TcpPortGuard {
+        listener: TcpListener::bind("127.0.0.1:0").expect("bind an ephemeral TCP port"),
+    }
+}
+
+/// Holds a TCP port number so nothing else in the process claims it while a config names it.
+pub struct TcpPortGuard {
+    listener: TcpListener,
+}
+
+impl TcpPortGuard {
+    /// The reserved port number.
+    pub fn port(&self) -> u16 {
+        self.listener
             .local_addr()
             .expect("read the ephemeral port")
             .port()

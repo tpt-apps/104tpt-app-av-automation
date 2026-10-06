@@ -8,7 +8,7 @@
 use std::net::UdpSocket;
 
 use tpt_app_av_automation_scenarios::{
-    http_get, reserve_udp_port, wait_until, Engine, TempDir, PATIENCE, TOKEN,
+    http_get, reserve_tcp_port, reserve_udp_port, wait_until, Engine, TempDir, PATIENCE, TOKEN,
 };
 use tpt_av_control_dmx::artnet::build_artdmx;
 use tpt_av_control_midi::{Midi2ChannelVoice, Midi2Message, Ump};
@@ -83,17 +83,14 @@ impl<'a> Fixture<'a> {
         for attempt in 0..4 {
             // Hold all four reservations at once so the numbers are distinct from any other
             // scenario running concurrently, then release them before the engine binds them.
-            let guards = [
-                reserve_udp_port(),
-                reserve_udp_port(),
-                reserve_udp_port(),
-                reserve_udp_port(),
-            ];
+            let guards = [reserve_udp_port(), reserve_udp_port(), reserve_udp_port()];
+            let api_guard = reserve_tcp_port();
             let osc_port = guards[0].port();
             let artnet_port = guards[1].port();
             let ump_port = guards[2].port();
-            let api_port = guards[3].port();
+            let api_port = api_guard.port();
             drop(guards);
+            drop(api_guard);
 
             let config = dir.write(
                 &format!("service-{attempt}.yaml"),
