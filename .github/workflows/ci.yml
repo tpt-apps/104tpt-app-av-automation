@@ -62,24 +62,24 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libasound2-dev libudev-dev pkg-config
 
       - name: Build fuzz targets
-        run: cargo +nightly fuzz build
+        run: cargo +nightly fuzz build --target x86_64-unknown-linux-gnu
 
       # A short budget per target: enough to catch a shallow panic on every push, while
       # the long-running campaigns are the separate fuzz-nightly job.
       - name: Fuzz rule-pack parser
-        run: cargo +nightly fuzz run rule-pack -- -max_total_time=120 -rss_limit_mb=4096
+        run: cargo +nightly fuzz run --target x86_64-unknown-linux-gnu rule-pack -- -max_total_time=120 -rss_limit_mb=4096
 
       - name: Fuzz inbound OSC
-        run: cargo +nightly fuzz run inbound-osc -- -max_total_time=120 -rss_limit_mb=4096
+        run: cargo +nightly fuzz run --target x86_64-unknown-linux-gnu inbound-osc -- -max_total_time=120 -rss_limit_mb=4096
 
       - name: Fuzz inbound MIDI
-        run: cargo +nightly fuzz run inbound-midi -- -max_total_time=120 -rss_limit_mb=4096
+        run: cargo +nightly fuzz run --target x86_64-unknown-linux-gnu inbound-midi -- -max_total_time=120 -rss_limit_mb=4096
 
       - name: Fuzz inbound Art-Net/sACN
-        run: cargo +nightly fuzz run inbound-dmx -- -max_total_time=120 -rss_limit_mb=4096
+        run: cargo +nightly fuzz run --target x86_64-unknown-linux-gnu inbound-dmx -- -max_total_time=120 -rss_limit_mb=4096
 
       - name: Fuzz local API requests
-        run: cargo +nightly fuzz run api-request -- -max_total_time=120 -rss_limit_mb=4096
+        run: cargo +nightly fuzz run --target x86_64-unknown-linux-gnu api-request -- -max_total_time=120 -rss_limit_mb=4096
 
       # A crash leaves an artifact; surface it in the run log and as a downloadable file.
       - name: Upload crash artifacts
@@ -167,8 +167,8 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libasound2-dev libudev-dev pkg-config
       - name: Long fuzz campaign
         run: |
-          cargo +nightly fuzz run rule-pack -- -max_total_time=300 -rss_limit_mb=4096
-          cargo +nightly fuzz run api-request -- -max_total_time=300 -rss_limit_mb=4096
+          cargo +nightly fuzz run --target x86_64-unknown-linux-gnu rule-pack -- -max_total_time=300 -rss_limit_mb=4096
+          cargo +nightly fuzz run --target x86_64-unknown-linux-gnu api-request -- -max_total_time=300 -rss_limit_mb=4096
       - name: Upload crash artifacts
         if: failure()
         uses: actions/upload-artifact@v4
