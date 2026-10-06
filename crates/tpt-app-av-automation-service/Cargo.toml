@@ -8,6 +8,9 @@ license.workspace = true
 authors.workspace = true
 repository.workspace = true
 homepage.workspace = true
+readme = "README.md"
+keywords = ["av-automation", "daemon", "watchdog", "rest-api", "sqlite"]
+categories = ["web-programming::http-server", "database", "multimedia"]
 
 [dependencies]
 tpt-app-av-automation-core = { workspace = true }

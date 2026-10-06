@@ -8,6 +8,8 @@ license.workspace = true
 authors.workspace = true
 repository.workspace = true
 homepage.workspace = true
+keywords = ["av-automation", "rules-engine", "conditions", "deterministic", "live-events"]
+categories = ["algorithms", "data-structures"]
 readme = "README.md"
 
 [dependencies]

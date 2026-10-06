@@ -8,6 +8,8 @@ license.workspace = true
 authors.workspace = true
 repository.workspace = true
 homepage.workspace = true
+keywords = ["av-automation", "osc", "midi", "dmx", "simulation"]
+categories = ["multimedia", "network-programming", "simulation"]
 readme = "README.md"
 
 [dependencies]

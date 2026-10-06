@@ -675,3 +675,41 @@ fn init_lists_templates_and_rejects_unknown_ones() {
     let bad = cli(&["init", dir.path().to_str().unwrap(), "--template", "nope"]);
     assert_eq!(code(&bad), 4, "{}", stderr(&bad));
 }
+
+#[test]
+fn devices_lists_validates_and_pings() {
+    let dir = TempDir::new("devices-cmd");
+    let good = dir.write(
+        "devices.yaml",
+        "devices:
+  - { id: rehearsal, protocol: virtual }
+  - { id: proj, protocol: osc, address: '127.0.0.1:9000' }
+",
+    );
+    let listed = cli(&["devices", "--devices", good.to_str().unwrap()]);
+    assert_eq!(code(&listed), 0, "{}", stderr(&listed));
+    assert!(stdout(&listed).contains("rehearsal") && stdout(&listed).contains("2 device(s)"));
+
+    let pinged = cli(&["devices", "--devices", good.to_str().unwrap(), "--ping"]);
+    assert_eq!(code(&pinged), 0, "{}{}", stdout(&pinged), stderr(&pinged));
+
+    let bad = dir.write(
+        "bad.yaml",
+        "devices:
+  - { id: x, protocol: osc, address: nope }
+",
+    );
+    let rejected = cli(&[
+        "devices",
+        "--devices",
+        bad.to_str().unwrap(),
+        "--format",
+        "json",
+    ]);
+    assert_eq!(code(&rejected), 4);
+    assert!(
+        stdout(&rejected).contains("\"valid\":false"),
+        "{}",
+        stdout(&rejected)
+    );
+}

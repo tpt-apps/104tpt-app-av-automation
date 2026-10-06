@@ -8,6 +8,8 @@ license.workspace = true
 authors.workspace = true
 repository.workspace = true
 homepage.workspace = true
+keywords = ["av-automation", "rules-engine", "yaml", "validation", "live-events"]
+categories = ["parser-implementations", "config", "data-structures"]
 readme = "README.md"
 
 [dependencies]

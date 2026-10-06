@@ -8,7 +8,9 @@ license = "MIT OR Apache-2.0"
 authors = ["TPT Solutions"]
 repository = "https://github.com/tpt-apps/104tpt-app-av-automation"
 homepage = "https://opensource.tptsolutions.co.nz/"
-readme = "../../README.md"
+keywords = ["av-automation", "desktop", "tauri", "dashboard", "live-events"]
+categories = ["gui", "multimedia"]
+readme = "README.md"
 publish = false
 
 # This crate is excluded from the root workspace: it drags in the Tauri/WebView2

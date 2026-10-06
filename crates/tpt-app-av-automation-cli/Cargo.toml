@@ -8,6 +8,9 @@ license.workspace = true
 authors.workspace = true
 repository.workspace = true
 homepage.workspace = true
+readme = "README.md"
+keywords = ["av-automation", "cli", "osc", "midi", "dmx"]
+categories = ["command-line-utilities", "multimedia"]
 
 [[bin]]
 name = "tpt-av-automation"

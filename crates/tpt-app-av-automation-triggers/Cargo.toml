@@ -8,6 +8,8 @@ license.workspace = true
 authors.workspace = true
 repository.workspace = true
 homepage.workspace = true
+keywords = ["osc", "midi", "dmx", "scheduler", "av-automation"]
+categories = ["network-programming", "multimedia", "date-and-time"]
 readme = "README.md"
 
 [dependencies]

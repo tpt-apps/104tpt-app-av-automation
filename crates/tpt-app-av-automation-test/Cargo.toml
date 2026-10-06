@@ -8,6 +8,9 @@ license.workspace = true
 authors.workspace = true
 repository.workspace = true
 homepage.workspace = true
+readme = "README.md"
+keywords = ["av-automation", "golden-tests", "fault-injection", "virtual-devices", "testing"]
+categories = ["development-tools::testing", "simulation"]
 
 [dependencies]
 tpt-app-av-automation-core = { workspace = true }

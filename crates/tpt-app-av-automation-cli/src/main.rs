@@ -38,6 +38,8 @@ struct Cli {
 enum Command {
     /// Create a ready-to-run show folder (pack, devices, service settings) from a template.
     Init(InitArgs),
+    /// List the devices in a device file, check them, and optionally test that each can be opened.
+    Devices(DevicesArgs),
     /// Check a rule pack (and optionally its device file and service config) without running it.
     Validate(ValidateArgs),
     /// Evaluate events against a rule pack and show what would happen. Sends nothing, ever.
@@ -74,6 +76,20 @@ pub struct InitArgs {
     /// Overwrite files that already exist.
     #[arg(long)]
     pub force: bool,
+}
+
+#[derive(Args, Debug)]
+pub struct DevicesArgs {
+    /// Device file (YAML).
+    #[arg(long)]
+    pub devices: PathBuf,
+    /// Also open each device's endpoint and ping it. UDP devices are connectionless, so for
+    /// those this proves the endpoint can be opened, not that the device is listening.
+    #[arg(long)]
+    pub ping: bool,
+    /// Output format (`trace` behaves like `json`).
+    #[arg(long, value_enum, default_value_t = Format::Text)]
+    pub format: Format,
 }
 
 #[derive(Args, Debug)]
@@ -193,6 +209,7 @@ fn main() -> ProcessExit {
     };
     let result = match cli.command {
         Command::Init(args) => init::init(&args),
+        Command::Devices(args) => commands::devices(&args),
         Command::Validate(args) => commands::validate(&args),
         Command::Simulate(args) => commands::simulate(&args),
         Command::Run(args) => commands::run(&args),

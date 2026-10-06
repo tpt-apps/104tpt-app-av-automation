@@ -21,7 +21,7 @@ use tpt_app_av_automation_service::{
 use tpt_app_av_automation_triggers::LocalClock;
 
 use crate::event_spec::{self, ScheduleAt};
-use crate::{Format, HistoryArgs, RunArgs, SimulateArgs, ValidateArgs, WatchdogArgs};
+use crate::{DevicesArgs, Format, HistoryArgs, RunArgs, SimulateArgs, ValidateArgs, WatchdogArgs};
 
 /// Monday 2024-01-01 00:00 UTC, the anchor for a simulated clock.
 const MONDAY_EPOCH_MS: u64 = 1_704_067_200_000;
@@ -30,6 +30,94 @@ fn print_diagnostics(diagnostics: &[Diagnostic]) {
     for d in diagnostics {
         eprintln!("  {d}");
     }
+}
+
+// --- devices ------------------------------------------------------------------------------------
+
+pub fn devices(args: &DevicesArgs) -> Result<ExitCode> {
+    let file = DeviceFile::from_path(&args.devices)?;
+    let diagnostics = file.validate();
+    let errors = diagnostics
+        .iter()
+        .filter(|d| d.severity == Severity::Error)
+        .count();
+
+    // One line per device; with --ping, the endpoint is built and probed.
+    let mut rows = Vec::new();
+    let mut unreachable = 0;
+    for device in &file.devices {
+        let status = if !args.ping {
+            None
+        } else {
+            match tpt_app_av_automation_devices::build_endpoint(device) {
+                Ok(endpoint) => match endpoint.ping() {
+                    Ok(()) => Some(Ok(())),
+                    Err(e) => Some(Err(e.to_string())),
+                },
+                Err(e) => Some(Err(e.to_string())),
+            }
+        };
+        if matches!(status, Some(Err(_))) {
+            unreachable += 1;
+        }
+        rows.push((device, status));
+    }
+
+    match args.format {
+        Format::Text => {
+            print_diagnostics(&diagnostics);
+            for (device, status) in &rows {
+                let note = match status {
+                    None => String::new(),
+                    Some(Ok(())) => "  ok".to_string(),
+                    Some(Err(e)) => format!("  FAILED: {e}"),
+                };
+                println!(
+                    "{:<20} {:<8} {:<10} {}{note}",
+                    device.id,
+                    device.protocol,
+                    format!("{:?}", device.kind).to_lowercase(),
+                    device.address.as_deref().unwrap_or("-"),
+                );
+            }
+            println!(
+                "{} device(s), {errors} error(s){}",
+                file.devices.len(),
+                if args.ping {
+                    format!(", {unreachable} failed to open")
+                } else {
+                    String::new()
+                }
+            );
+        }
+        Format::Json | Format::Trace => {
+            let devices: Vec<Value> = rows
+                .iter()
+                .map(|(d, status)| {
+                    json!({
+                        "id": d.id,
+                        "protocol": d.protocol,
+                        "address": d.address,
+                        "ping": status.as_ref().map(|s| match s {
+                            Ok(()) => json!("ok"),
+                            Err(e) => json!(e),
+                        }),
+                    })
+                })
+                .collect();
+            println!(
+                "{}",
+                json!({ "valid": errors == 0, "devices": devices, "diagnostics": diagnostics })
+            );
+        }
+    }
+    Ok(if errors > 0 {
+        ExitCode::ConfigurationError
+    } else if unreachable > 0 {
+        ExitCode::DeviceError
+    } else {
+        ExitCode::Success
+    })
 }
 
 // --- validate -----------------------------------------------------------------------------------

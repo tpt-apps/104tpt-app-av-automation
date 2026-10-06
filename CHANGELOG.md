@@ -23,6 +23,13 @@ released. The CLI exit-code contract (0–6) and the `format_version: 1` rule fo
   exterior lights, failover).
 - `docs/devices.md`: the device file format, per-protocol addresses and health behaviour.
 - `run` warns when started without `--state-dir`.
+- `tpt-av-automation devices`: list and check a device file, and with `--ping` test that each
+  endpoint opens.
+- Rule edits made in the desktop app are written back to the pack file (beside the state database
+  by default), so they survive a restart; "From template" on the Rules tab adds a built-in
+  template's rules and devices.
+- `docs/troubleshooting.md`; `docs/rule-format.md` now documents `site:`, `solar` schedules and
+  `keep_executions`.
 - `media` device protocol: `media.video_source` / `media.audio_route` delivered as OSC at
   per-device address templates, with address-segment validation.
 - `scripts/install-windows-service.ps1`: registers the watchdog as a boot-time scheduled task.

@@ -1,24 +1,51 @@
 # tpt-app-av-automation-core
 
-Shared primitives for TPT AV Automation.
+Shared primitives for [TPT AV Automation](../../README.md): identifiers, clocks, errors, the
+normalized event and rate limiting.
 
-This crate deliberately contains **no** AV, media or protocol knowledge. It holds the pieces every
-other crate needs:
+This crate deliberately contains **no** AV, media or protocol knowledge. It sits at the bottom of the
+dependency graph: every other crate in the workspace depends on it, and it depends only on `serde`,
+`serde_json`, `thiserror` and `tracing`. It is `#![forbid(unsafe_code)]`.
 
-- [`Error`] / [`Result`] — one error taxonomy for the whole workspace.
-- Identifiers (`RuleId`, `ConditionId`, `ActionId`, `DeviceId`, `ExecutionId`).
-- [`Timestamp`] — a monotonic-anchored millisecond timestamp used instead of `SystemTime` so that
-  rule evaluation stays deterministic and testable (spec §3.2).
-- [`Clock`] / [`FixedClock`] — injectable time source; the deterministic core never reads the wall
-  clock directly.
-- [`Event`] — the normalized event that every trigger matches against (spec §10).
-- [`RateLimiter`] — inbound trigger rate limiting, required because control protocols are
-  unauthenticated and untrusted input (spec §16).
+## What is in it
+
+| Item | Purpose |
+|------|---------|
+| `Error`, `Result` | One error taxonomy for the whole workspace. |
+| `Diagnostic`, `Severity` | A located validation message (error or warning), used instead of a boolean "valid". |
+| `RuleId`, `ConditionId`, `ActionId`, `DeviceId`, `ExecutionId` | Typed identifiers, so a rule id cannot be passed where a device id is expected. |
+| `slugify_rule_id` | Derive a stable, URL-safe rule id from a display name. |
+| `Timestamp` | Millisecond timestamp used instead of `SystemTime`, so evaluation stays deterministic. |
+| `Clock`, `SystemClock`, `FixedClock` | Injectable time source. The deterministic core never reads the wall clock directly. |
+| `Event`, `Protocol` | The normalized event every trigger matches against, whichever protocol it arrived on. |
+| `DeviceHealth`, `DmxLevel`, `MidiLevel` | Event payload types for device health and control-level changes. |
+| `RateLimiter`, `BackoffPolicy` | Per-source inbound rate limiting with adaptive backoff. Control protocols are unauthenticated, so inbound traffic is treated as untrusted. |
+
+## Example
+
+```rust
+use tpt_app_av_automation_core::{Clock, FixedClock, Timestamp};
+
+// Tests and simulation drive time explicitly; the engine never calls the OS clock itself.
+let clock = FixedClock::new(Timestamp::now());
+let before = clock.now();
+clock.advance_millis(60_000);
+assert_eq!(clock.now().millis_since(before), 60_000);
+```
+
+## Design notes
+
+- **Determinism first.** Given the same pack, registry state, clock and event, the engine produces
+  the same decision. Injecting `Clock` is what makes simulation, golden tests and chaos tests
+  reproducible.
+- **Stable by contract.** Identifier types and the `Event` shape are serialized into the state
+  database and the local API; changes are recorded in [CHANGELOG.md](CHANGELOG.md).
+
+## Where it fits
+
+`core` → `model` → `triggers` / `conditions` / `devices` → `actions` → `engine` → `service` → `cli`.
+See [docs/architecture.md](../../docs/architecture.md).
 
 ## Licence
 
-Dual MIT / Apache-2.0. See `LICENSE-MIT` and `LICENSE-APACHE` in the repository root.
-
-```text
-d:\Programming\1PRODUCTION\Open Source\104tpt-app-av-automation\crates\tpt-app-av-automation-core\README.md
-```
+Dual-licensed under [MIT](../../LICENSE-MIT) or [Apache-2.0](../../LICENSE-APACHE), at your option.

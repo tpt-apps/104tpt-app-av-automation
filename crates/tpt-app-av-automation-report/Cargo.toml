@@ -8,6 +8,8 @@ license.workspace = true
 authors.workspace = true
 repository.workspace = true
 homepage.workspace = true
+keywords = ["av-automation", "reporting", "exit-codes", "json", "audit"]
+categories = ["command-line-utilities", "value-formatting", "development-tools"]
 readme = "README.md"
 
 [dependencies]

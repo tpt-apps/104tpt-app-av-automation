@@ -94,15 +94,31 @@ listeners:                         # inbound control traffic
   - { protocol: dmx512, bind: "COM3" }           # serial DMX512 input (adapter port name)
 exec_allow: []                     # programs workflow.exec may run; empty = exec disabled
 simulate: false                    # force simulation regardless of arming
+keep_executions: 100000            # executions kept in the database (older ones are pruned)
 api:
   enabled: false                   # off by default
   bind: "127.0.0.1:8787"           # loopback only; anything else is rejected
   token: "at-least-16-characters"  # required when enabled
 ```
 
+Unknown keys in `service.yaml` and in the device file are rejected, so a typo is reported rather
+than silently ignored.
+
+## Site (for sunrise and sunset schedules)
+
+A pack that uses a `solar` schedule declares where the venue is, because a sunrise or sunset time
+cannot be computed without it:
+
+```yaml
+site:
+  latitude: 51.5074       # degrees north, -90 to 90
+  longitude: -0.1278      # degrees east, -180 to 180
+  elevation_deg: -0.833   # optional; the default is sunrise/sunset proper, -6 gives civil twilight
+```
+
 ## Schedule triggers
 
-A schedule trigger uses exactly **one** of `at`, `cron` or `interval_ms`; combining any two is a
+A schedule trigger uses exactly **one** of `at`, `cron`, `solar` or `interval_ms`; combining any two is a
 validation error, and so is using none.
 
 ```yaml
@@ -121,6 +137,9 @@ trigger: { type: schedule, cron: "0 9 * * mon", once: true }
 
 # Interval: every N milliseconds of wall time, with no catch-up burst after a stall.
 trigger: { type: schedule, interval_ms: 300000 }
+
+# Follow the sun (needs `site:` on the pack): 30 minutes before sunset, or after sunrise.
+trigger: { type: schedule, solar: { event: sunset, minutes: -30 } }
 ```
 
 Field syntax: `*`, `5`, `1-5`, `*/15`, `1-40/15` and `1,5,9` (combinable). Month and weekday fields

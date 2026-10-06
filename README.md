@@ -28,7 +28,7 @@ yet:** media actions through `tpt-kinetix`/`tpt-cadence` (media actions go out a
 | MIDI ports (live in/out by name via `midir`) | implemented, **not tested against hardware** |
 | DMX512 serial output (`dmx512` devices, `serialport`) | implemented, **not tested against a physical adapter** |
 | Media actions (`media.video_source`, `media.audio_route`) | sent as OSC by a `media` device (templated addresses); **not tested against a real media server**, no `tpt-kinetix` backend |
-| CLI: `validate`, `simulate`, `run`, `watchdog`, `history` | done |
+| CLI: `init`, `devices`, `validate`, `simulate`, `run`, `watchdog`, `history` | done |
 | Headless service, SQLite persistence, restart-safe one-shots, watchdog | done |
 | Local API (REST + WebSocket), disabled by default, token + loopback only | done |
 | Desktop UI: dashboard, rule builder, device manager, timeline | done (see below) |
