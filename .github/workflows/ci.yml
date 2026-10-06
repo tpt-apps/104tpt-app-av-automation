@@ -20,6 +20,9 @@ jobs:
       RUSTFLAGS: -D warnings
     steps:
       - uses: actions/checkout@v4
+      - name: Fetch sibling tpt-av-control (path dependency)
+        shell: bash
+        run: git clone --depth 1 https://github.com/tpt-solutions/tpt-av-control.git ../tpt-av-control
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -47,9 +50,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Fetch sibling tpt-av-control (path dependency)
+        shell: bash
+        run: git clone --depth 1 https://github.com/tpt-solutions/tpt-av-control.git ../tpt-av-control
       - uses: dtolnay/rust-toolchain@nightly
       - uses: Swatinem/rust-cache@v2
-      - uses: taiki-e/install-action@cargo-fuzz
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-fuzz
       - name: Install ALSA headers (midir)
         run: sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config
 
@@ -89,6 +97,9 @@ jobs:
       RUSTFLAGS: -D warnings
     steps:
       - uses: actions/checkout@v4
+      - name: Fetch sibling tpt-av-control (path dependency)
+        shell: bash
+        run: git clone --depth 1 https://github.com/tpt-solutions/tpt-av-control.git ../tpt-av-control
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -112,6 +123,9 @@ jobs:
       RUSTFLAGS: -D warnings
     steps:
       - uses: actions/checkout@v4
+      - name: Fetch sibling tpt-av-control (path dependency)
+        shell: bash
+        run: git clone --depth 1 https://github.com/tpt-solutions/tpt-av-control.git ../tpt-av-control
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -141,9 +155,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Fetch sibling tpt-av-control (path dependency)
+        shell: bash
+        run: git clone --depth 1 https://github.com/tpt-solutions/tpt-av-control.git ../tpt-av-control
       - uses: dtolnay/rust-toolchain@nightly
       - uses: Swatinem/rust-cache@v2
-      - uses: taiki-e/install-action@cargo-fuzz
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-fuzz
       - name: Install ALSA headers (midir)
         run: sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config
       - name: Long fuzz campaign
