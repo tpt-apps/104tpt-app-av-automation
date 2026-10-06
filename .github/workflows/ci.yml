@@ -29,7 +29,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: Install ALSA headers (midir)
-        run: sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libudev-dev pkg-config
 
       - name: Format
         run: cargo fmt --all --check
@@ -59,7 +59,7 @@ jobs:
         with:
           tool: cargo-fuzz
       - name: Install ALSA headers (midir)
-        run: sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libudev-dev pkg-config
 
       - name: Build fuzz targets
         run: cargo +nightly fuzz build
@@ -164,7 +164,7 @@ jobs:
         with:
           tool: cargo-fuzz
       - name: Install ALSA headers (midir)
-        run: sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libudev-dev pkg-config
       - name: Long fuzz campaign
         run: |
           cargo +nightly fuzz run rule-pack -- -max_total_time=300 -rss_limit_mb=4096
