@@ -39,8 +39,13 @@ jobs:
 
       # Spec §11: the service must run headless on Linux, so the systemd unit is
       # smoke-tested for syntax rather than merely committed.
+      # `verify` requires ExecStart's binary to exist and be executable, so a stub stands in
+      # at the install path; only the unit's syntax and directives are under test here.
       - name: Validate systemd unit
-        run: systemd-analyze verify scripts/tpt-av-automation.service
+        run: |
+          printf '#!/bin/sh\nexit 0\n' | sudo tee /usr/local/bin/tpt-av-automation > /dev/null
+          sudo chmod 0755 /usr/local/bin/tpt-av-automation
+          systemd-analyze verify scripts/tpt-av-automation.service
 
       - name: Test
         run: cargo test --workspace --locked

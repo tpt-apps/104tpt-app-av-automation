@@ -196,13 +196,15 @@ fn apply_pack_swaps_rules_and_preserves_armed_state() {
         "show is still armed"
     );
 
-    // A broken pack is refused and leaves the running pack untouched.
-    let rejected = running
+    // An empty pack parses and is applied; the swap lands asynchronously like the one above.
+    let emptied = running
         .bridge
-        .apply_pack("format_version: 1\nname: broken\nrules: []\n")
+        .apply_pack("format_version: 1\nname: empty\nrules: []\n")
         .unwrap();
-    assert_eq!(rejected["valid"], true, "an empty pack parses");
-    assert_eq!(dashboard_rule_count(&running), 0, "and was applied");
+    assert_eq!(emptied["valid"], true, "an empty pack parses");
+    wait_until("the empty pack to be applied", || {
+        dashboard_rule_count(&running) == 0
+    });
     // Restore for the rest of the test.
     running.bridge.apply_pack(PACK).unwrap();
     wait_until("rules to be back", || dashboard_rule_count(&running) == 1);
