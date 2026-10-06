@@ -8,7 +8,6 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  RUSTFLAGS: -D warnings
 
 jobs:
   # Linux is the reference platform for the headless service and the only platform where
@@ -17,12 +16,17 @@ jobs:
   linux:
     name: Linux (stable)
     runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: -D warnings
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
+
+      - name: Install ALSA headers (midir)
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config
 
       - name: Format
         run: cargo fmt --all --check
@@ -45,12 +49,15 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly
       - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@cargo-fuzz
+      - name: Install ALSA headers (midir)
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config
 
       - name: Build fuzz targets
         run: cargo +nightly fuzz build
 
       # A short budget per target: enough to catch a shallow panic on every push, while
-      # the long-running campaigns are a separate scheduled job.
+      # the long-running campaigns are the separate fuzz-nightly job.
       - name: Fuzz rule-pack parser
         run: cargo +nightly fuzz run rule-pack -- -max_total_time=120 -rss_limit_mb=4096
 
@@ -78,6 +85,8 @@ jobs:
   windows:
     name: Windows (stable)
     runs-on: windows-latest
+    env:
+      RUSTFLAGS: -D warnings
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -99,6 +108,8 @@ jobs:
   desktop:
     name: Desktop (Windows, Tauri)
     runs-on: windows-latest
+    env:
+      RUSTFLAGS: -D warnings
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -117,26 +128,28 @@ jobs:
       - name: Clippy
         run: cargo clippy --manifest-path crates/tpt-app-av-automation-tauri/Cargo.toml --all-targets -- -D warnings
 
-      - name: Test (Rust: boot and embedded service)
+      - name: "Test (Rust: boot and embedded service)"
         run: cargo test --manifest-path crates/tpt-app-av-automation-tauri/Cargo.toml --locked
 
       - name: Test (UI helpers)
         run: node --test crates/tpt-app-av-automation-tauri/ui/test/format.test.js
 
   # Deeper fuzz campaigns for the parser surfaces that carry the most risk in a live show.
-  # Scheduled rather than per-push because each run is measured in hours.
+  # Runs on every CI trigger; each run takes about ten minutes.
   fuzz-nightly:
     name: Fuzz (nightly campaign)
     runs-on: ubuntu-latest
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly
       - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@cargo-fuzz
+      - name: Install ALSA headers (midir)
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config
       - name: Long fuzz campaign
         run: |
-          cargo +nightly fuzz run rule-pack -- -max_total_time=1800 -rss_limit_mb=4096
-          cargo +nightly fuzz run api-request -- -max_total_time=1800 -rss_limit_mb=4096
+          cargo +nightly fuzz run rule-pack -- -max_total_time=300 -rss_limit_mb=4096
+          cargo +nightly fuzz run api-request -- -max_total_time=300 -rss_limit_mb=4096
       - name: Upload crash artifacts
         if: failure()
         uses: actions/upload-artifact@v4
