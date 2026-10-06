@@ -1,0 +1,25 @@
+# Unattended museum loop: opens and closes the gallery on a schedule. If a step fails the operator
+# is told and an incident is logged so someone can check on it later.
+format_version: 1
+name: Museum Loop
+revision: 1
+rules:
+  - id: open-gallery
+    name: Open gallery
+    armed: false
+    trigger: { type: schedule, at: "08:45", days: [tue, wed, thu, fri, sat, sun] }
+    actions:
+      - { id: lights, type: control.dmx_scene, device: gallery-lights, scene: open, fade_ms: 5000 }
+      - { id: loop, type: media.video_source, device: media-server, source: exhibit-loop, operation: start }
+    policy:
+      on_failure: run_fallback
+      fallback:
+        - { id: alert, type: notify.operator, message: Gallery did not open cleanly, severity: high }
+        - { id: log, type: log.incident, severity: high }
+  - id: close-gallery
+    name: Close gallery
+    armed: false
+    trigger: { type: schedule, at: "17:30", days: [tue, wed, thu, fri, sat, sun] }
+    actions:
+      - { id: loop-stop, type: media.video_source, device: media-server, source: exhibit-loop, operation: stop }
+      - { id: lights, type: control.dmx_scene, device: gallery-lights, scene: closed, fade_ms: 8000 }

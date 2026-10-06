@@ -181,7 +181,102 @@ const TptFormat = (() => {
     return merged;
   }
 
+  // ---- device editor helpers (pure; the dialog only reads and writes form values) ----
+
+  const DEVICE_KINDS = ["lighting", "display", "audio", "switcher", "media", "other"];
+  const DEVICE_PROTOCOLS = ["osc", "artnet", "sacn", "midi", "ump", "dmx512", "media", "virtual"];
+
+  /** Per-protocol hint for the address field; a `null` placeholder means the field is unused. */
+  const ADDRESS_HINTS = {
+    osc: { placeholder: "192.168.1.50:9000", hint: "host:port the device listens on for OSC." },
+    artnet: { placeholder: "192.168.1.60:6454", hint: "host:port of the Art-Net node (default port 6454)." },
+    sacn: { placeholder: "192.168.1.60:5568", hint: "host:port of the sACN receiver (default port 5568)." },
+    ump: { placeholder: "192.168.1.70:5004", hint: "host:port of the MIDI 2.0 (UMP) gateway." },
+    media: { placeholder: "192.168.1.80:9002", hint: "host:port of the media server (commands go out as OSC)." },
+    midi: { placeholder: "Behringer UMC", hint: "Part of the MIDI output port name." },
+    dmx512: { placeholder: "COM3", hint: "Serial port of the DMX512 adapter, e.g. COM3 or /dev/ttyUSB0." },
+    virtual: { placeholder: null, hint: "No address: commands are recorded in memory, for rehearsing." },
+  };
+
+  function addressHint(protocol) {
+    return ADDRESS_HINTS[protocol] || { placeholder: "", hint: "" };
+  }
+
+  /** Scenes as editable text, one per line: `name | universe | start_channel | v,v,v`. */
+  function scenesToText(scenes) {
+    return Object.entries(scenes || {})
+      .map(([name, s]) => `${name} | ${s.universe} | ${s.start_channel ?? 0} | ${(s.values || []).join(",")}`)
+      .join("\n");
+  }
+
+  /** Parses [`scenesToText`] output; returns `{ scenes }` or `{ error }` naming the bad line. */
+  function parseScenes(text) {
+    const scenes = {};
+    const lines = String(text || "").split("\n").map((l) => l.trim()).filter(Boolean);
+    for (const [i, line] of lines.entries()) {
+      const parts = line.split("|").map((p) => p.trim());
+      if (parts.length !== 4) return { error: `Scene line ${i + 1}: use name | universe | start_channel | values` };
+      const [name, universe, start, values] = parts;
+      const nums = values.split(",").map((v) => v.trim()).filter((v) => v !== "").map(Number);
+      const whole = (n, max) => Number.isInteger(n) && n >= 0 && n <= max;
+      if (!name) return { error: `Scene line ${i + 1}: the scene needs a name` };
+      if (name in scenes) return { error: `Scene line ${i + 1}: duplicate scene "${name}"` };
+      if (universe === "" || !whole(Number(universe), 65535)) return { error: `Scene "${name}": universe must be a whole number` };
+      if (start === "" || !whole(Number(start), 511)) return { error: `Scene "${name}": start channel must be 0-511` };
+      if (nums.length === 0 || !nums.every((n) => whole(n, 255))) return { error: `Scene "${name}": values must be whole numbers 0-255, comma separated` };
+      scenes[name] = { universe: Number(universe), start_channel: Number(start), values: nums };
+    }
+    return { scenes };
+  }
+
+  /**
+   * Builds the `DeviceConfig` JSON from the dialog's fields. Empty optional fields are omitted so
+   * the YAML stays minimal. Returns `{ device }` or `{ error }`.
+   */
+  function deviceFromForm(f) {
+    const id = String(f.id || "").trim();
+    if (!id) return { error: "Give the device an id" };
+    if (!/^[A-Za-z0-9._-]+$/.test(id)) return { error: "The id may only contain letters, digits, - _ and ." };
+    const device = { id, kind: f.kind || "other", protocol: f.protocol };
+    const name = String(f.name || "").trim();
+    if (name) device.name = name;
+    const address = String(f.address || "").trim();
+    if (address && f.protocol !== "virtual") device.address = address;
+    const hb = String(f.heartbeat_ms ?? "").trim();
+    if (hb) {
+      const n = Number(hb);
+      if (!Number.isInteger(n) || n <= 0) return { error: "Heartbeat must be a whole number of milliseconds" };
+      device.heartbeat_ms = n;
+    }
+    const parsed = parseScenes(f.scenes);
+    if (parsed.error) return { error: parsed.error };
+    if (Object.keys(parsed.scenes).length) device.scenes = parsed.scenes;
+    if (f.protocol === "media") {
+      const media = {};
+      if (String(f.media_video || "").trim()) media.video = f.media_video.trim();
+      if (String(f.media_audio || "").trim()) media.audio = f.media_audio.trim();
+      if (Object.keys(media).length) device.media = media;
+    }
+    return { device };
+  }
+
+  /** Suggests an unused id like `osc-1` for a new device. */
+  function suggestDeviceId(protocol, existing) {
+    const taken = new Set(existing);
+    for (let n = 1; ; n++) {
+      const id = `${protocol}-${n}`;
+      if (!taken.has(id)) return id;
+    }
+  }
+
   return {
+    DEVICE_KINDS,
+    DEVICE_PROTOCOLS,
+    addressHint,
+    scenesToText,
+    parseScenes,
+    deviceFromForm,
+    suggestDeviceId,
     OPTIONS,
     pad2,
     fmtClock,

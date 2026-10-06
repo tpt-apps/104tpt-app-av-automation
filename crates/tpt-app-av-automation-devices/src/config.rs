@@ -22,6 +22,7 @@ pub struct SceneDef {
 
 /// One device entry in `devices.yaml`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct DeviceConfig {
     /// Identifier referenced from rules.
     pub id: String,
@@ -67,6 +68,7 @@ impl DeviceConfig {
 
 /// The whole `devices.yaml` document.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct DeviceFile {
     /// Devices.
     #[serde(default)]
@@ -76,6 +78,26 @@ pub struct DeviceFile {
 const PROTOCOLS: [&str; 8] = [
     "osc", "artnet", "sacn", "midi", "ump", "dmx512", "media", "virtual",
 ];
+
+/// Longest heartbeat deadline accepted: one day.
+const MAX_HEARTBEAT_MS: u64 = 86_400_000;
+
+/// True when `address` looks like `host:port` with a non-empty host and a numeric port.
+fn is_host_port(address: &str) -> bool {
+    match address.trim().rsplit_once(':') {
+        Some((host, port)) => {
+            let host = host.trim_start_matches('[').trim_end_matches(']');
+            !host.is_empty() && !host.contains(char::is_whitespace) && port.parse::<u16>().is_ok()
+        }
+        None => false,
+    }
+}
+
+/// Ids are used in rules and file names, so keep them to a plain, unambiguous character set.
+fn is_valid_id(id: &str) -> bool {
+    id.chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+}
 
 impl DeviceFile {
     /// Parses YAML; a malformed document is a parse error, never a panic.
@@ -90,6 +112,40 @@ impl DeviceFile {
         Self::from_yaml_str(&text)
     }
 
+    /// Renders the document as YAML (comments in a hand-written file are not preserved).
+    pub fn to_yaml_string(&self) -> Result<String> {
+        serde_yaml::to_string(self).map_err(|e| Error::Parse(e.to_string()))
+    }
+
+    /// Writes the file atomically: a temp file in the same folder, then a rename, so a crash
+    /// never leaves a half-written device list. Parent folders are created.
+    pub fn write_to_path(&self, path: impl AsRef<Path>) -> Result<()> {
+        let path = path.as_ref();
+        let text = self.to_yaml_string()?;
+        if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| Error::Io(format!("{}: {e}", parent.display())))?;
+        }
+        let mut tmp = path.as_os_str().to_owned();
+        tmp.push(".tmp");
+        let tmp = std::path::PathBuf::from(tmp);
+        std::fs::write(&tmp, text).map_err(|e| Error::Io(format!("{}: {e}", tmp.display())))?;
+        std::fs::rename(&tmp, path).map_err(|e| Error::Io(format!("{}: {e}", path.display())))
+    }
+
+    /// Copies an existing file to `<path>.bak`; a missing file is not an error.
+    pub fn backup(path: impl AsRef<Path>) -> Result<()> {
+        let path = path.as_ref();
+        if !path.exists() {
+            return Ok(());
+        }
+        let mut bak = path.as_os_str().to_owned();
+        bak.push(".bak");
+        std::fs::copy(path, &bak)
+            .map(|_| ())
+            .map_err(|e| Error::Io(format!("{}: {e}", path.display())))
+    }
+
     /// Checks ids, protocols and addresses.
     pub fn validate(&self) -> Vec<Diagnostic> {
         let mut out = Vec::new();
@@ -100,6 +156,11 @@ impl DeviceFile {
                 out.push(Diagnostic::error(
                     format!("{loc}.id"),
                     "device id must not be empty",
+                ));
+            } else if !is_valid_id(&d.id) {
+                out.push(Diagnostic::error(
+                    format!("{loc}.id"),
+                    "device id may only contain letters, digits, `-`, `_` and `.`",
                 ));
             } else if !seen.insert(d.id.clone()) {
                 out.push(Diagnostic::error(
@@ -125,6 +186,27 @@ impl DeviceFile {
                 out.push(Diagnostic::error(
                     format!("{loc}.address"),
                     format!("`{}` devices need a host:port address", d.protocol),
+                ));
+            }
+            if matches!(
+                d.protocol.as_str(),
+                "osc" | "artnet" | "sacn" | "ump" | "media"
+            ) && d.address.as_deref().is_some_and(|a| !is_host_port(a))
+            {
+                out.push(Diagnostic::error(
+                    format!("{loc}.address"),
+                    format!(
+                        "`{}` address must look like host:port, e.g. 192.168.1.50:9000",
+                        d.protocol
+                    ),
+                ));
+            }
+            if d.heartbeat_ms
+                .is_some_and(|ms| ms == 0 || ms > MAX_HEARTBEAT_MS)
+            {
+                out.push(Diagnostic::error(
+                    format!("{loc}.heartbeat_ms"),
+                    format!("heartbeat_ms must be between 1 and {MAX_HEARTBEAT_MS}"),
                 ));
             }
             if d.protocol == "midi" && d.address.as_deref().is_none_or(|a| a.trim().is_empty()) {
@@ -261,6 +343,49 @@ devices:
         )
         .unwrap();
         assert_eq!(file.validate().len(), 1);
+    }
+
+    #[test]
+    fn round_trips_through_yaml_and_disk() {
+        let file = DeviceFile::from_yaml_str(SAMPLE).unwrap();
+        let again = DeviceFile::from_yaml_str(&file.to_yaml_string().unwrap()).unwrap();
+        assert_eq!(file, again);
+
+        let dir = std::env::temp_dir().join(format!("tpt-devcfg-{}", std::process::id()));
+        let path = dir.join("nested").join("devices.yaml");
+        file.write_to_path(&path).unwrap();
+        assert_eq!(DeviceFile::from_path(&path).unwrap(), file);
+        DeviceFile::backup(&path).unwrap();
+        assert!(dir.join("nested").join("devices.yaml.bak").exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn rejects_bad_addresses_ids_heartbeats_and_unknown_keys() {
+        let file = DeviceFile::from_yaml_str(
+            "devices:
+  - {id: 'bad id', protocol: osc, address: nope}
+  - {id: ok, protocol: osc, address: 'h:99999'}
+  - {id: hb, protocol: virtual, heartbeat_ms: 0}
+",
+        )
+        .unwrap();
+        let locations: Vec<_> = file.validate().iter().map(|d| d.location.clone()).collect();
+        assert!(locations.contains(&"devices[0].id".to_string()));
+        assert!(locations.contains(&"devices[0].address".to_string()));
+        assert!(locations.contains(&"devices[1].address".to_string()));
+        assert!(locations.contains(&"devices[2].heartbeat_ms".to_string()));
+        assert!(DeviceFile::from_yaml_str(
+            "devices:
+  - {id: a, protocol: virtual, heartbeat_msec: 5}
+"
+        )
+        .is_err());
+        assert!(DeviceFile::from_yaml_str(
+            "devces: []
+"
+        )
+        .is_err());
     }
 
     #[test]

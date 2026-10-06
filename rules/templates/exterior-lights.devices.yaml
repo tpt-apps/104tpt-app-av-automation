@@ -1,0 +1,9 @@
+devices:
+  - id: facade
+    name: Facade Lights
+    kind: lighting
+    protocol: artnet
+    address: "192.168.6.20:6454"
+    scenes:
+      "on": { universe: 1, start_channel: 0, values: [255, 255, 255] }
+      "off": { universe: 1, start_channel: 0, values: [0, 0, 0] }

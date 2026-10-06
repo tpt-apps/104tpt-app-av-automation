@@ -697,7 +697,7 @@ impl TriggerSpec {
 
 /// Keys accepted inside a `schedule` trigger body.
 fn schedule_keys() -> &'static [&'static str] {
-    &["at", "cron", "interval_ms", "days", "once"]
+    &["at", "solar", "cron", "interval_ms", "days", "once"]
 }
 
 impl fmt::Display for LocalTime {

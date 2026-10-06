@@ -1,0 +1,24 @@
+# Starter pack: two rules you can try straight away.
+#
+#   tpt-av-automation simulate --rules pack.yaml --devices devices.yaml --event manual:start-show
+#   tpt-av-automation simulate --rules pack.yaml --devices devices.yaml --event schedule:08:00
+#
+# Rules load disarmed: nothing is sent until you arm a rule (set `armed: true` or use the app).
+format_version: 1
+name: My First Show
+revision: 1
+rules:
+  - id: start-show
+    name: Start show
+    armed: false
+    trigger: { type: manual }
+    actions:
+      - { id: lights-up, type: control.dmx_scene, device: lights, scene: bright, fade_ms: 2000 }
+      - { id: projector-on, type: control.osc, device: projector, address: /power, args: [1] }
+      - { id: ready, type: notify.operator, message: Show started }
+  - id: morning-dim
+    name: Morning dim
+    armed: false
+    trigger: { type: schedule, at: "08:00", days: [mon, tue, wed, thu, fri] }
+    actions:
+      - { id: lights-dim, type: control.dmx_scene, device: lights, scene: dim }

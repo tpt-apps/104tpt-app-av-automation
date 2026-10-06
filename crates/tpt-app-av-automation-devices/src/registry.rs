@@ -95,6 +95,11 @@ impl DeviceRegistry {
         self.devices.insert(device.id.as_str().to_owned(), device);
     }
 
+    /// Removes a device; returns whether it existed.
+    pub fn unregister(&mut self, id: &str) -> bool {
+        self.devices.remove(id).is_some()
+    }
+
     /// Looks a device up.
     pub fn get(&self, id: &str) -> Option<&Device> {
         self.devices.get(id)

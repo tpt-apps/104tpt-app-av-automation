@@ -125,6 +125,11 @@ impl Actions {
         self.endpoints.insert(device.into(), endpoint);
     }
 
+    /// Removes the endpoint bound to a device; returns whether one was bound.
+    pub fn unbind_endpoint(&mut self, device: &str) -> bool {
+        self.endpoints.remove(device).is_some()
+    }
+
     /// The endpoint bound to a device, if any.
     pub fn endpoint(&self, device: &str) -> Option<&Arc<dyn Endpoint>> {
         self.endpoints.get(device)

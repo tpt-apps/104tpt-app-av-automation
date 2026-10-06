@@ -308,6 +308,21 @@ impl Engine {
         self.check_devices_in(pack)
     }
 
+    /// Ids of the rules whose actions (or fallbacks) target `device`.
+    pub fn rules_using_device(&self, device: &str) -> Vec<String> {
+        self.pack
+            .rules
+            .iter()
+            .filter(|rule| {
+                rule.actions
+                    .iter()
+                    .chain(rule.policy.fallback.iter())
+                    .any(|step| step.target() == Some(device))
+            })
+            .map(|rule| rule.id.as_str().to_owned())
+            .collect()
+    }
+
     fn check_devices_in(&self, pack: &RulePack) -> Vec<Diagnostic> {
         let mut out = Vec::new();
         for (ri, rule) in pack.rules.iter().enumerate() {

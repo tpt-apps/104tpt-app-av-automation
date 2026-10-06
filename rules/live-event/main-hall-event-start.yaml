@@ -19,6 +19,9 @@ rules:
         type: device_health
         device: projector-1
         equals: online
+        # A network device counts as online once it has sent traffic to one of the service's
+        # listeners. Until then its health is `unknown` and this rule is skipped (see
+        # docs/devices.md, "Health and heartbeats"). Add `fire_on_unknown: true` to run anyway.
         description: Only start the show if the projector is reachable
     actions:
       - id: house-to-half

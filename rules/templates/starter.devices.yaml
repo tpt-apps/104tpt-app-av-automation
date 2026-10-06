@@ -1,0 +1,12 @@
+# Starter devices: all `virtual`, so everything works with no hardware. Commands are recorded in
+# memory instead of being sent. When you are ready, change `protocol` to `osc`, `artnet`, ... and
+# add an `address`. See docs/devices.md for every option.
+devices:
+  - { id: projector, name: Projector, kind: display, protocol: virtual }
+  - id: lights
+    name: Room Lights
+    kind: lighting
+    protocol: virtual
+    scenes:
+      bright: { universe: 1, start_channel: 0, values: [255, 255, 255] }
+      dim: { universe: 1, start_channel: 0, values: [60, 60, 60] }

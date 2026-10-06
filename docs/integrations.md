@@ -84,9 +84,9 @@ rather than silently discarded. The resulting frame is diffed into the same chan
 Art-Net and sACN produce, so a rule does not care which transport delivered them. The port opens
 lazily and reopens after a failure, so an adapter unplugged mid-show recovers without a restart.
 
-This is output only: a rule cannot trigger on DMX read back from the adapter. Framing, universe
-bookkeeping, reconnect and the "universe 1 only" rule are unit-tested against a fake port; sending to
-a physical adapter has **not** been verified, because CI has none.
+Framing, universe bookkeeping, reconnect and the "universe 1 only" rule are unit-tested against a
+fake port. Neither sending to nor reading from a physical adapter has been verified, because CI has
+none.
 
 ## Adding a device backend
 

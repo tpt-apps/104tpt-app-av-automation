@@ -1,0 +1,5 @@
+# Classroom: one projector and one amp, both controlled over OSC. Change the addresses to your
+# devices, or set `protocol: virtual` on both to rehearse with no hardware.
+devices:
+  - { id: projector, name: Classroom Projector, kind: display, protocol: osc, address: "192.168.1.50:9000" }
+  - { id: amp, name: Classroom Amp, kind: audio, protocol: osc, address: "192.168.1.51:9001" }

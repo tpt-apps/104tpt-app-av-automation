@@ -72,7 +72,7 @@ devices:
   - id: lighting-rack
     name: Lighting Rack            # defaults to the id
     kind: lighting                 # lighting | display | audio | switcher | media | other
-    protocol: artnet               # osc | artnet | sacn | midi | ump | dmx512 | virtual
+    protocol: artnet               # osc | artnet | sacn | midi | ump | dmx512 | media | virtual (see devices.md)
     address: 127.0.0.1:6454        # host:port; for midi, part of the output port name; for dmx512, the serial port name
     heartbeat_ms: 15000            # optional deadline; silence beyond it = offline
     scenes:                        # named DMX scenes for control.dmx_scene
@@ -91,6 +91,7 @@ listeners:                         # inbound control traffic
   - { protocol: artnet, bind: "0.0.0.0:6454" }
   - { protocol: midi,   bind: "USB MIDI" }   # part of a MIDI input port name
   - { protocol: ump,    bind: "0.0.0.0:9002" } # MIDI 2.0: raw Universal MIDI Packets over UDP
+  - { protocol: dmx512, bind: "COM3" }           # serial DMX512 input (adapter port name)
 exec_allow: []                     # programs workflow.exec may run; empty = exec disabled
 simulate: false                    # force simulation regardless of arming
 api:

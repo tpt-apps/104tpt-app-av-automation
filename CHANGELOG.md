@@ -6,7 +6,23 @@ released. The CLI exit-code contract (0–6) and the `format_version: 1` rule fo
 
 ## [Unreleased]
 
+### Fixed
+- `solar` schedules were documented and modelled but rejected when loading YAML ("unknown field
+  `solar`"); they now load.
+- A mistyped key in `devices.yaml` or the service settings (`heartbeat_msec`, `exec_alow`, a
+  misspelled `api:` key) was silently ignored; it is now an error.
+
 ### Added
+- Desktop device manager: add, edit and delete devices from the Devices tab. Changes apply live
+  without a restart and are written to the devices file at once (the original is kept once as
+  `devices.yaml.bak`); a device a rule still uses cannot be deleted. With no devices file
+  configured, `devices.yaml` is created beside the state database on the first edit.
+- Stricter device validation: `host:port` addresses, id characters, heartbeat range.
+- `tpt-av-automation init`: scaffold a show folder from a built-in template (`--list` shows them);
+  starter templates under `rules/templates/` (classroom, meeting room, worship, theatre, museum,
+  exterior lights, failover).
+- `docs/devices.md`: the device file format, per-protocol addresses and health behaviour.
+- `run` warns when started without `--state-dir`.
 - `media` device protocol: `media.video_source` / `media.audio_route` delivered as OSC at
   per-device address templates, with address-segment validation.
 - `scripts/install-windows-service.ps1`: registers the watchdog as a boot-time scheduled task.

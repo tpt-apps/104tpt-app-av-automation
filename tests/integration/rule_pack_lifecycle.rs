@@ -157,9 +157,17 @@ fn every_shipped_example_pack_still_validates() {
             if path.is_dir() {
                 stack.push(path);
             } else if path.extension().is_some_and(|e| e == "yaml")
-                && path.file_name().is_some_and(|n| n != "devices.yaml")
+                && path
+                    .file_name()
+                    .is_some_and(|n| !n.to_string_lossy().ends_with("devices.yaml"))
             {
-                let out = cli(&["validate", "--rules", path.to_str().unwrap()]);
+                // A template ships beside its own device file; check the pair together.
+                let companion = path.with_extension("devices.yaml");
+                let mut args = vec!["validate", "--rules", path.to_str().unwrap()];
+                if companion.exists() {
+                    args.extend(["--devices", companion.to_str().unwrap()]);
+                }
+                let out = cli(&args);
                 assert_eq!(
                     code(&out),
                     EXIT_OK,

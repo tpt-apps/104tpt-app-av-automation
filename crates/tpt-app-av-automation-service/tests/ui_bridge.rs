@@ -33,11 +33,20 @@ struct Running {
 
 impl Running {
     fn start(pack: &str, devices: &str, store: Option<Store>) -> Self {
+        Self::start_with_devices_path(pack, devices, store, None)
+    }
+
+    fn start_with_devices_path(
+        pack: &str,
+        devices: &str,
+        store: Option<Store>,
+        devices_path: Option<std::path::PathBuf>,
+    ) -> Self {
         let config = ServiceConfig {
             tick_ms: 10,
             ..ServiceConfig::default()
         };
-        let service = Service::build(
+        let mut service = Service::build(
             RulePack::from_yaml_str(pack).unwrap(),
             DeviceFile::from_yaml_str(devices).unwrap(),
             config,
@@ -45,6 +54,9 @@ impl Running {
             Arc::new(SystemClock),
         )
         .expect("service should build");
+        if let Some(path) = devices_path {
+            service.set_devices_path(path);
+        }
         let bridge = UiBridge::new(service.handle());
         let thread = std::thread::spawn(move || service.run().expect("service run"));
         assert!(
@@ -501,5 +513,113 @@ rules:
 fn cancelling_an_unknown_execution_is_an_error_not_a_crash() {
     let mut running = Running::start(PACK, DEVICES, None);
     assert!(running.bridge.cancel_execution("nope").is_err());
+    running.stop();
+}
+
+#[test]
+fn devices_can_be_added_edited_and_removed_and_the_file_follows() {
+    let dir = std::env::temp_dir().join(format!("tpt-av-ui-devices-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("devices.yaml");
+    std::fs::write(
+        &path,
+        "# my hand-written comment
+devices:
+  - { id: proj, protocol: virtual }
+",
+    )
+    .unwrap();
+    let mut running = Running::start_with_devices_path(PACK, DEVICES, None, Some(path.clone()));
+
+    // Add.
+    let added = running
+        .bridge
+        .upsert_device(json!({"id": "cam", "kind": "display", "protocol": "virtual"}))
+        .unwrap();
+    assert_eq!(added["valid"], true);
+    assert!(running.bridge.ping_device("cam").unwrap()["reachable"] == true);
+    let on_disk = DeviceFile::from_path(&path).unwrap();
+    assert_eq!(on_disk.devices.len(), 2);
+    assert!(
+        std::fs::read_to_string(dir.join("devices.yaml.bak"))
+            .unwrap()
+            .contains("hand-written"),
+        "the original is kept once"
+    );
+
+    // Edit keeps one entry per id.
+    running
+        .bridge
+        .upsert_device(json!({"id": "cam", "name": "Camera", "protocol": "virtual"}))
+        .unwrap();
+    let configs = running.bridge.device_configs().unwrap();
+    assert_eq!(configs["devices"].as_array().unwrap().len(), 2);
+    wait_until("the snapshot shows the new name", || {
+        running.bridge.devices()["devices"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|d| d["name"] == "Camera")
+    });
+
+    // Mistakes are structured answers and change nothing.
+    let bad = running
+        .bridge
+        .upsert_device(json!({"id": "x", "protocol": "osc", "address": "nope"}))
+        .unwrap();
+    assert_eq!(bad["valid"], false);
+    assert_eq!(DeviceFile::from_path(&path).unwrap().devices.len(), 2);
+    let unknown_key = running
+        .bridge
+        .upsert_device(json!({"id": "y", "protocol": "virtual", "bogus": 1}))
+        .unwrap();
+    assert_eq!(unknown_key["valid"], false);
+
+    // A device a rule uses cannot be removed; an unused one can.
+    let refused = running.bridge.remove_device("proj").unwrap();
+    assert_eq!(refused["valid"], false);
+    assert_eq!(running.bridge.remove_device("cam").unwrap()["valid"], true);
+    assert!(running.bridge.ping_device("cam").is_err());
+    assert_eq!(DeviceFile::from_path(&path).unwrap().devices.len(), 1);
+    assert!(running.bridge.remove_device("ghost").is_err());
+    running.stop();
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn a_template_adds_its_devices_and_rules_without_clobbering_existing_ones() {
+    let mut running = Running::start(PACK, DEVICES, None);
+    assert!(UiBridge::templates().as_array().unwrap().len() >= 5);
+
+    let first = running.bridge.apply_template("starter").unwrap();
+    assert_eq!(first["valid"], true, "{first}");
+    assert_eq!(first["added_rules"].as_array().unwrap().len(), 2);
+    assert_eq!(first["added_devices"].as_array().unwrap().len(), 2);
+    let pack = running.bridge.pack_json().unwrap();
+    assert_eq!(
+        pack["rules"].as_array().unwrap().len(),
+        3,
+        "the existing rule is kept"
+    );
+    assert!(pack["rules"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|r| r["armed"] != true || r["id"] == "show"));
+
+    // Applying it again adds renamed copies of the rules but no duplicate devices.
+    let again = running.bridge.apply_template("starter").unwrap();
+    assert_eq!(again["added_devices"].as_array().unwrap().len(), 0);
+    let ids: Vec<String> = running.bridge.pack_json().unwrap()["rules"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["id"].as_str().unwrap().to_owned())
+        .collect();
+    let unique: std::collections::HashSet<_> = ids.iter().collect();
+    assert_eq!(ids.len(), unique.len(), "ids stay unique: {ids:?}");
+
+    assert!(running.bridge.apply_template("nope").is_err());
     running.stop();
 }

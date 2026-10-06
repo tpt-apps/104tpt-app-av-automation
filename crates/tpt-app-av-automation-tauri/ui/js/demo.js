@@ -230,7 +230,51 @@
   const handlers = {
     dashboard,
     devices: () => ({ devices }),
-    app_info: () => ({ version: "0.1.0", pack_file: "rules/main-hall.yaml" }),
+    app_info: () => ({
+      version: "0.1.0",
+      pack_file: "rules/main-hall.yaml",
+      devices_file: "%APPDATA%\tpt-av-automation\devices.yaml",
+    }),
+    templates: () => [
+      { name: "starter", about: "two example rules on virtual devices; needs no hardware" },
+      { name: "classroom", about: "power a classroom up and down on school days" },
+      { name: "theatre", about: "MIDI cue stack recalling lighting presets" },
+    ],
+    apply_template: (args) => {
+      const id = `${args.name}-demo`;
+      pack.rules.push({
+        id, name: `${args.name} (demo)`, version: 1, armed: false,
+        trigger: { type: "manual" }, actions: [],
+      });
+      return { valid: true, template: args.name, added_rules: [id], added_devices: [] };
+    },
+    device_configs: () => ({
+      devices: devices.map((d) => ({
+        id: d.id, name: d.name, kind: d.kind, protocol: d.protocol,
+        ...(d.address ? { address: d.address } : {}),
+      })),
+    }),
+    upsert_device: (args) => {
+      const d = args.device;
+      if (!d.id) return { valid: false, diagnostics: [{ location: "device.id", message: "device id must not be empty" }] };
+      const entry = {
+        id: d.id, name: d.name || d.id, kind: d.kind || "other", protocol: d.protocol,
+        address: d.address ?? null, health: "unknown", last_seen_ms: null,
+      };
+      const index = devices.findIndex((x) => x.id === d.id);
+      if (index >= 0) devices[index] = { ...devices[index], ...entry }; else devices.push(entry);
+      return { valid: true, device: d.id };
+    },
+    remove_device: (args) => {
+      const index = devices.findIndex((x) => x.id === args.id);
+      if (index < 0) throw `unknown device \`${args.id}\``;
+      const users = pack.rules.filter((r) => (r.actions || []).some((a) => a.device === args.id));
+      if (users.length) {
+        return { valid: false, diagnostics: users.map((r) => ({ location: `rules.${r.id}`, message: `rule \`${r.id}\` still uses device \`${args.id}\`` })) };
+      }
+      devices.splice(index, 1);
+      return { valid: true, device: args.id };
+    },
     catalogue: () => catalogue,
     pack_json: () => JSON.parse(JSON.stringify(pack)),
     pack_yaml: () =>

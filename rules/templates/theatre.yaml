@@ -1,0 +1,26 @@
+# Theatre cue stack: MIDI notes from a keyboard or show-control surface recall lighting presets.
+# Needs a `midi` listener in the service settings, e.g.
+#   listeners: [ { protocol: midi, bind: "Your MIDI Port" } ]
+format_version: 1
+name: Theatre Cues
+revision: 1
+rules:
+  - id: cue-1
+    name: Cue 1
+    armed: false
+    trigger: { type: midi, message: note_on, channel: 1, number: 60 }
+    actions:
+      - { id: go, type: control.dmx_scene, device: lighting, scene: preset-1, fade_ms: 2000 }
+  - id: cue-2
+    name: Cue 2
+    armed: false
+    trigger: { type: midi, message: note_on, channel: 1, number: 62 }
+    actions:
+      - { id: go, type: control.dmx_scene, device: lighting, scene: preset-2, fade_ms: 2000 }
+  - id: blackout
+    name: Blackout
+    armed: false
+    priority: critical
+    trigger: { type: midi, message: note_on, channel: 1, number: 64 }
+    actions:
+      - { id: go, type: control.dmx_scene, device: lighting, scene: blackout, fade_ms: 0 }

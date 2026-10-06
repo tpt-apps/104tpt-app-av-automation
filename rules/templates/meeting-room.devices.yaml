@@ -1,0 +1,10 @@
+devices:
+  - { id: display, name: Room Display, kind: display, protocol: osc, address: "192.168.2.10:9000" }
+  - id: lights
+    name: Room Lights
+    kind: lighting
+    protocol: artnet
+    address: "192.168.2.20:6454"
+    scenes:
+      meeting: { universe: 1, start_channel: 0, values: [200, 200, 200] }
+      "off": { universe: 1, start_channel: 0, values: [0, 0, 0] }

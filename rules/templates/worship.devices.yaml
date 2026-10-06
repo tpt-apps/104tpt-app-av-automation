@@ -1,0 +1,11 @@
+devices:
+  - { id: projector, name: Main Projector, kind: display, protocol: osc, address: "192.168.3.10:9000" }
+  - id: lighting
+    name: Sanctuary Lights
+    kind: lighting
+    protocol: artnet
+    address: "192.168.3.20:6454"
+    scenes:
+      service: { universe: 1, start_channel: 0, values: [180, 180, 120, 120] }
+      dim: { universe: 1, start_channel: 0, values: [40, 40, 20, 20] }
+  - { id: sound, name: Sound Desk, kind: audio, protocol: osc, address: "192.168.3.30:9001" }

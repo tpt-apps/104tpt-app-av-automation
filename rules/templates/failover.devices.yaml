@@ -1,0 +1,3 @@
+devices:
+  - { id: main-display, name: Main Display, kind: display, protocol: osc, address: "192.168.7.10:9000", heartbeat_ms: 15000 }
+  - { id: switcher, name: Video Switcher, kind: switcher, protocol: osc, address: "192.168.7.20:9001" }

@@ -1,0 +1,27 @@
+# Failover with recovery: when the main display drops out, switch to the backup input; switch back
+# when it returns. Health for network devices comes from traffic they send to a service listener
+# (see docs/devices.md), so add an `osc` listener the display reports to.
+format_version: 1
+name: Display Failover
+revision: 1
+rules:
+  - id: display-lost
+    name: Main display lost
+    armed: false
+    priority: critical
+    trigger: { type: device_state, device: main-display, state: offline }
+    actions:
+      - { id: backup, type: control.osc, device: switcher, address: /switcher/main/input, args: [2] }
+      - { id: tell, type: notify.operator, message: Main display lost - switched to backup input, severity: high }
+      - { id: log, type: log.incident, severity: high }
+    policy:
+      on_failure: run_fallback
+      fallback:
+        - { id: escalate, type: notify.operator, message: Failover failed - manual intervention required, severity: critical }
+  - id: display-back
+    name: Main display recovered
+    armed: false
+    trigger: { type: device_state, device: main-display, state: online }
+    actions:
+      - { id: main, type: control.osc, device: switcher, address: /switcher/main/input, args: [1] }
+      - { id: tell, type: notify.operator, message: Main display is back - switched to main input }

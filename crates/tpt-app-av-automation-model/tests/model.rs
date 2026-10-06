@@ -1024,3 +1024,12 @@ rules:
         "{diags:?}"
     );
 }
+
+#[test]
+fn a_solar_schedule_loads_from_yaml() {
+    let pack = RulePack::from_yaml_str(
+        "format_version: 1\nname: Sun\nrevision: 1\nsite: { latitude: 51.5, longitude: -0.1 }\nrules:\n  - id: on\n    name: On\n    trigger: { type: schedule, solar: { event: sunset, minutes: -30 } }\n    actions:\n      - { id: n, type: notify.operator, message: hi }\n",
+    )
+    .expect("a solar schedule is documented and must parse");
+    assert_eq!(pack.rules.len(), 1);
+}

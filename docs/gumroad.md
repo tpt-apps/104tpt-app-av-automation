@@ -34,7 +34,7 @@ Items in `[BRACKETS]` are decisions or assets you still need to supply.
 | **Name** | TPT AV Automation |
 | **URL slug** | `tpt-av-automation` |
 | **Live URL** | https://tpt12.gumroad.com/l/tpt-av-automation |
-| **Price** | Three tiers, see below (spec.txt �2.1). Same installer in every tier |
+| **Price** | Three tiers, see below (spec.txt §2.1). Same installer in every tier |
 | **Category** | Software / Business & Money, or Audio & Video tools |
 | **Tags** | av, live production, automation, osc, midi, dmx, art-net, sacn, show control, offline |
 | **Summary** (shown under the title, ~1 line) | Offline-first show automation for AV: WHEN something happens, IF conditions hold, THEN run an auditable sequence, with no programmer in the room. |
@@ -42,7 +42,7 @@ Items in `[BRACKETS]` are decisions or assets you still need to supply.
 
 ### Pricing tiers
 
-Prices come from the spec's pricing hypothesis (spec.txt �2.1) and are **unvalidated**. Sell them as
+Prices come from the spec's pricing hypothesis (spec.txt §2.1) and are **unvalidated**. Sell them as
 three Gumroad products (or three versions of one product). There is no licence check, so the tiers
 differ in licensed scope and support, not in features.
 
@@ -55,8 +55,8 @@ differ in licensed scope and support, not in features.
 - Perpetual licence, no subscription and no cloud costs. Paid major-version upgrades and support
   contracts can come later.
 - Audience: the Gumroad listing on the website sells a supported, ready-to-install product to
-  professional buyers. The open-source repo is a separate audience of people who find the source and
-  build it themselves. The tiers are not aimed at them.
+  professional buyers. Keep the open-source repo out of buyer-facing copy: listing, receipt, README.txt and
+  installer text should not mention it.
 - `[Decide what each tier includes for support, e.g. email response time, onboarding call]`
 
 ---
@@ -132,7 +132,7 @@ on this page.
 |------|-------|
 | `TPT AV Automation_0.1.0_x64-setup.exe` | The installer |
 | `README.txt` (optional) | Install steps, SmartScreen note, support email |
-| `rules/` examples (optional) | From the repo's `rules/` folder |
+| `rules/` examples (optional) | Shipped `rules/` folder |
 
 Gumroad settings:
 - **License keys:** off. The app has no licence check.
@@ -162,7 +162,7 @@ Version: 0.1.0
 > **First steps:** open the app with no arguments for a fresh "new show". Rules load disarmed, so
 > use **Simulate** first and **Arm** only when you are happy.
 >
-> **Help:** `[SUPPORT EMAIL]` · docs: `[REPO URL]/tree/master/docs`
+> **Help:** `[SUPPORT EMAIL]` · docs: `[DOCS URL]`
 
 ---
 
@@ -170,8 +170,8 @@ Version: 0.1.0
 
 - **Refund policy:** `[e.g. 30-day no-questions refund]`
 - **Support:** `[email, response time]`
-- **Terms:** software is provided as-is under MIT OR Apache-2.0. For live shows, test on your own
-  rig first.
+- **Terms:** `[Licence terms: perpetual licence for the tier purchased]`. Software is provided as-is. For live
+  shows, test on your own rig first.
 
 ---
 

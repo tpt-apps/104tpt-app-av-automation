@@ -1,0 +1,30 @@
+# Classroom power on in the morning, off in the afternoon, plus a "start lesson" button.
+# Rules load disarmed: arm them in the app (or set armed: true) when you are happy.
+format_version: 1
+name: Classroom
+description: Power the room up and down on school days, with a manual override
+revision: 1
+rules:
+  - id: morning-on
+    name: Morning power on
+    armed: false
+    tags: [schedule]
+    trigger: { type: schedule, at: "07:45", days: [mon, tue, wed, thu, fri] }
+    actions:
+      - { id: projector-on, type: control.osc, device: projector, address: /power, args: [1] }
+      - { id: amp-on, type: control.osc, device: amp, address: /power, args: [1] }
+  - id: afternoon-off
+    name: Afternoon power off
+    armed: false
+    tags: [schedule]
+    trigger: { type: schedule, at: "16:15", days: [mon, tue, wed, thu, fri] }
+    actions:
+      - { id: projector-off, type: control.osc, device: projector, address: /power, args: [0] }
+      - { id: amp-off, type: control.osc, device: amp, address: /power, args: [0] }
+  - id: start-lesson
+    name: Start lesson (button)
+    armed: false
+    trigger: { type: manual }
+    actions:
+      - { id: projector-on, type: control.osc, device: projector, address: /power, args: [1] }
+      - { id: announce, type: notify.operator, message: Lesson started }

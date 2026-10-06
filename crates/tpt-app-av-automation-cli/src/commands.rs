@@ -288,6 +288,12 @@ pub fn run(args: &RunArgs) -> Result<ExitCode> {
     if args.simulate {
         config.simulate = true;
     }
+    if config.state_db.is_none() {
+        eprintln!(
+            "warning: no --state-dir given, so nothing is persisted: armed state and one-shot \
+             schedules are lost on restart"
+        );
+    }
     let pack = RulePack::from_path(&args.rules)?;
     let devices = match &args.devices {
         Some(path) => DeviceFile::from_path(path)?,

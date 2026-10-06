@@ -1,0 +1,10 @@
+devices:
+  - id: lighting
+    name: Lighting Desk
+    kind: lighting
+    protocol: artnet
+    address: "192.168.4.20:6454"
+    scenes:
+      preset-1: { universe: 1, start_channel: 0, values: [255, 0, 0, 0] }
+      preset-2: { universe: 1, start_channel: 0, values: [0, 255, 0, 0] }
+      blackout: { universe: 1, start_channel: 0, values: [0, 0, 0, 0] }

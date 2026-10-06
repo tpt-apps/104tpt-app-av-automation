@@ -6,6 +6,7 @@
 
 mod commands;
 mod event_spec;
+mod init;
 
 use std::path::PathBuf;
 use std::process::ExitCode as ProcessExit;
@@ -15,7 +16,19 @@ use tpt_app_av_automation_report::ExitCode;
 
 /// Offline-first automation for professional AV, live production and media pipelines.
 #[derive(Parser, Debug)]
-#[command(name = "tpt-av-automation", version, about, long_about = None)]
+#[command(
+    name = "tpt-av-automation",
+    version,
+    about,
+    long_about = None,
+    after_help = "EXAMPLES:
+          tpt-av-automation init my-show                       create a working show folder
+          tpt-av-automation validate --rules pack.yaml --devices devices.yaml
+          tpt-av-automation simulate --rules pack.yaml --devices devices.yaml --event manual
+          tpt-av-automation run --service --rules pack.yaml --devices devices.yaml --state-dir ./state
+
+        Rules load disarmed, so nothing is sent until you arm one. Device file format: docs/devices.md."
+)]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -23,6 +36,8 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Command {
+    /// Create a ready-to-run show folder (pack, devices, service settings) from a template.
+    Init(InitArgs),
     /// Check a rule pack (and optionally its device file and service config) without running it.
     Validate(ValidateArgs),
     /// Evaluate events against a rule pack and show what would happen. Sends nothing, ever.
@@ -43,6 +58,22 @@ pub enum Format {
     Json,
     /// Complete execution records, including every condition and action.
     Trace,
+}
+
+#[derive(Args, Debug)]
+pub struct InitArgs {
+    /// Folder to create the show in.
+    #[arg(default_value = ".")]
+    pub dir: PathBuf,
+    /// Template to start from (see `--list`).
+    #[arg(long, default_value = "starter")]
+    pub template: String,
+    /// List the built-in templates and exit.
+    #[arg(long)]
+    pub list: bool,
+    /// Overwrite files that already exist.
+    #[arg(long)]
+    pub force: bool,
 }
 
 #[derive(Args, Debug)]
@@ -161,6 +192,7 @@ fn main() -> ProcessExit {
         }
     };
     let result = match cli.command {
+        Command::Init(args) => init::init(&args),
         Command::Validate(args) => commands::validate(&args),
         Command::Simulate(args) => commands::simulate(&args),
         Command::Run(args) => commands::run(&args),

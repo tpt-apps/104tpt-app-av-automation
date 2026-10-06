@@ -142,3 +142,41 @@ test("merging edits preserves what the editor does not render", () => {
   assert.deepEqual(merged.actions, loaded.actions);
   assert.deepEqual(merged.trigger, loaded.trigger);
 });
+
+test("device form builds minimal DeviceConfig JSON", () => {
+  const { device, error } = TptFormat.deviceFromForm({
+    id: " projector-1 ", name: "", kind: "display", protocol: "osc",
+    address: "192.168.1.50:9000", heartbeat_ms: "", scenes: "",
+  });
+  assert.equal(error, undefined);
+  assert.deepEqual(device, { id: "projector-1", kind: "display", protocol: "osc", address: "192.168.1.50:9000" });
+});
+
+test("device form rejects bad ids and heartbeats, and drops the address for virtual devices", () => {
+  assert.match(TptFormat.deviceFromForm({ id: "", protocol: "osc" }).error, /id/);
+  assert.match(TptFormat.deviceFromForm({ id: "bad id", protocol: "osc" }).error, /letters/);
+  assert.match(TptFormat.deviceFromForm({ id: "a", protocol: "osc", heartbeat_ms: "-5" }).error, /Heartbeat/);
+  const v = TptFormat.deviceFromForm({ id: "v", protocol: "virtual", address: "ignored", heartbeat_ms: "15000" });
+  assert.deepEqual(v.device, { id: "v", kind: "other", protocol: "virtual", heartbeat_ms: 15000 });
+});
+
+test("scenes round-trip through their text form and report bad lines", () => {
+  const parsed = TptFormat.parseScenes("half | 1 | 0 | 128, 128\nfull | 2 | 4 | 255");
+  assert.deepEqual(parsed.scenes, {
+    half: { universe: 1, start_channel: 0, values: [128, 128] },
+    full: { universe: 2, start_channel: 4, values: [255] },
+  });
+  assert.deepEqual(TptFormat.parseScenes(TptFormat.scenesToText(parsed.scenes)).scenes, parsed.scenes);
+  assert.match(TptFormat.parseScenes("nope").error, /line 1/);
+  assert.match(TptFormat.parseScenes("a | 1 | 0 | 300").error, /0-255/);
+  assert.match(TptFormat.parseScenes("a | 1 | 600 | 1").error, /0-511/);
+  assert.match(TptFormat.parseScenes("a | 1 | 0 | 1\na | 1 | 0 | 2").error, /duplicate/);
+});
+
+test("media templates are kept only for media devices; suggested ids skip taken ones", () => {
+  const m = TptFormat.deviceFromForm({ id: "m", protocol: "media", address: "h:1", media_video: " /v/{source} " });
+  assert.deepEqual(m.device.media, { video: "/v/{source}" });
+  assert.equal(TptFormat.deviceFromForm({ id: "o", protocol: "osc", address: "h:1", media_video: "/x" }).device.media, undefined);
+  assert.equal(TptFormat.suggestDeviceId("osc", ["osc-1", "osc-2", "x"]), "osc-3");
+  assert.equal(TptFormat.addressHint("virtual").placeholder, null);
+});

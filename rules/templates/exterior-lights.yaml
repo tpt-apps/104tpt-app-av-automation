@@ -1,0 +1,21 @@
+# Exterior lights that follow the sun: on 30 minutes before sunset, off at sunrise.
+# Replace the site with your venue's latitude and longitude.
+format_version: 1
+name: Exterior Lights
+revision: 1
+site:
+  latitude: 51.5074
+  longitude: -0.1278
+rules:
+  - id: facade-on
+    name: Facade on before sunset
+    armed: false
+    trigger: { type: schedule, solar: { event: sunset, minutes: -30 } }
+    actions:
+      - { id: on, type: control.dmx_scene, device: facade, scene: "on", fade_ms: 10000 }
+  - id: facade-off
+    name: Facade off at sunrise
+    armed: false
+    trigger: { type: schedule, solar: { event: sunrise, minutes: 0 } }
+    actions:
+      - { id: off, type: control.dmx_scene, device: facade, scene: "off", fade_ms: 10000 }

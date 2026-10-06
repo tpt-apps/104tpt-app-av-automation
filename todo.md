@@ -45,7 +45,7 @@ Phase 4 and 5 are untouched.
 
 ## Phase 1 — MVP Build (§19, §24.1 steps 1–15)
 
-- [x] Establish Cargo workspace and application shell (crates listed in §4: core, model, triggers, conditions, actions, engine, devices, report, cli, service, test, scenarios — stubs in place; `tauri` crate still to add)
+- [x] Establish Cargo workspace and application shell (crates listed in §4: core, model, triggers, conditions, actions, engine, devices, report, cli, service, test, scenarios — stubs in place; the `tauri` desktop crate is built)
   - _Status:_ all crates exist and build except `tauri`, which is excluded from the workspace and not started (see the desktop UI items). `scenarios` runs the integration and chaos suites in `tests/integration` and `tests/chaos`.
 - [x] Integrate `tpt-av-control` and enumerate supported protocols (§5.1)
   - _Status:_ OSC, MIDI and DMX/Art-Net/sACN codecs are used; the control-surface crate is not (no surface triggers yet). Supported protocols are listed in `docs/integrations.md`.
@@ -57,7 +57,7 @@ Phase 4 and 5 are untouched.
     be silently ignored. Parser/versioning coverage verified.
 - [x] Implement the deterministic evaluation core with virtual-device test support (§3.2, §10)
 - [x] Implement simulation mode end to end — armed/disarmed default-disarmed behaviour (§3.5, §12.5)
-  - _Status:_ engine, CLI, service and API; the always-visible UI indicator waits on the desktop UI.
+  - _Status:_ engine, CLI, service and API; the LIVE / SIMULATION banner is always visible in the desktop UI.
 - [x] Implement OSC inbound/outbound trigger + action (§7.2, §8.1)
 - [x] Implement MIDI (1.0/2.0) inbound/outbound trigger + action (§7.2, §8.1)
   - _Status:_ MIDI 1.0 in/out is implemented and tested on live ports opened by name (`midir`);
@@ -206,7 +206,7 @@ Phase 4 and 5 are untouched.
     `listeners: {expected, live, lost}` and drops to `degraded` when one is lost. The remaining
     `expect`s are in the test-rig crates and in provably-unreachable post-check positions.
 - [x] Package Windows release
-  - _Status:_ `scripts/package-windows.ps1` builds a static-CRT zip with SHA-256 and smoke-tests it; unsigned, no installer. The zip includes `install-windows-service.ps1` (boot-time scheduled task running the watchdog; not a native service, not run on a clean machine).
+  - _Status:_ `scripts/package-windows.ps1` builds a static-CRT zip with SHA-256 and smoke-tests it; unsigned. The desktop app has an NSIS/MSI installer (`tauri.conf.json`); the zip includes `install-windows-service.ps1` (boot-time scheduled task running the watchdog; not a native service, not run on a clean machine).
 - [x] Validate headless Linux service deployment
   - _Status:_ validated on Ubuntu 24.04 under WSL2 with real systemd: the full workspace test suite
     passes on Linux, and the unit was installed as user `tptav` and exercised. The API answered
@@ -217,7 +217,7 @@ Phase 4 and 5 are untouched.
   - _Status:_ the package imports only always-present Windows DLLs, but it has not been tried on a fresh machine/VM.
 - [ ] Verify Definition of Done checklist (§24):
   - [x] Rule pack authored (YAML or visual builder) validates without errors
-    - _Status:_ YAML; the visual builder waits on the desktop UI.
+    - _Status:_ YAML; the visual builder is in the desktop UI.
   - [x] Rules arm/disarm with state always visible in UI
     - _Status:_ the desktop dashboard shows every rule's armed state, the LIVE/SIMULATION banner
       is always on screen, and arm/disarm toggles go through the engine's control queue.

@@ -20,6 +20,9 @@ use tpt_app_av_automation_service::UiBridge;
 /// Where `save-pack` writes: the pack file the app started from, if any.
 struct PackFile(Option<PathBuf>);
 
+/// Where device edits are written (shown in the Devices panel).
+struct DevicesFile(Option<PathBuf>);
+
 #[tauri::command]
 fn dashboard(bridge: State<'_, UiBridge>) -> Value {
     bridge.dashboard()
@@ -122,6 +125,31 @@ fn ping_device(bridge: State<'_, UiBridge>, id: String) -> Result<Value, String>
 }
 
 #[tauri::command]
+fn templates() -> Value {
+    UiBridge::templates()
+}
+
+#[tauri::command]
+fn apply_template(bridge: State<'_, UiBridge>, name: String) -> Result<Value, String> {
+    bridge.apply_template(&name)
+}
+
+#[tauri::command]
+fn device_configs(bridge: State<'_, UiBridge>) -> Result<Value, String> {
+    bridge.device_configs()
+}
+
+#[tauri::command]
+fn upsert_device(bridge: State<'_, UiBridge>, device: Value) -> Result<Value, String> {
+    bridge.upsert_device(device)
+}
+
+#[tauri::command]
+fn remove_device(bridge: State<'_, UiBridge>, id: String) -> Result<Value, String> {
+    bridge.remove_device(&id)
+}
+
+#[tauri::command]
 fn catalogue() -> Value {
     serde_json::to_value(UiBridge::catalogue()).unwrap_or_else(|_| json!([]))
 }
@@ -144,10 +172,11 @@ fn save_pack_file(bridge: State<'_, UiBridge>, file: State<'_, PackFile>) -> Res
 
 /// Paths and versions the header and settings screens show.
 #[tauri::command]
-fn app_info(file: State<'_, PackFile>) -> Value {
+fn app_info(file: State<'_, PackFile>, devices: State<'_, DevicesFile>) -> Value {
     json!({
         "version": env!("CARGO_PKG_VERSION"),
         "pack_file": file.0.as_ref().map(|p| p.display().to_string()),
+        "devices_file": devices.0.as_ref().map(|p| p.display().to_string()),
     })
 }
 
@@ -179,13 +208,15 @@ fn main() {
 
     let args: Vec<String> = std::env::args().skip(1).collect();
     let config = boot::load_config(&args).unwrap_or_else(|e| fail(e.to_string()));
-    let pack_file = PackFile(config.pack.clone());
     let loaded = boot::load(config).unwrap_or_else(|e| fail(e.to_string()));
+    let pack_file = PackFile(loaded.pack_path.clone());
+    let devices_file = DevicesFile(loaded.devices_path.clone());
     let (bridge, worker) = boot::spawn(loaded).unwrap_or_else(|e| fail(e.to_string()));
 
     let result = tauri::Builder::default()
         .manage(bridge.clone())
         .manage(pack_file)
+        .manage(devices_file)
         .invoke_handler(tauri::generate_handler![
             dashboard,
             devices,
@@ -205,6 +236,11 @@ fn main() {
             cancel_execution,
             set_simulation,
             ping_device,
+            templates,
+            apply_template,
+            device_configs,
+            upsert_device,
+            remove_device,
             catalogue,
             save_pack_file,
             app_info,

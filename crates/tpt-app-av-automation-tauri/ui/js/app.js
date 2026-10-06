@@ -6,7 +6,9 @@
 
 (() => {
   const { esc, fmtClock, fmtDateTime, fmtAgo, fmtDuration, statusClass, healthClass,
-    fieldSpec, fieldToJson, actionNeedsDevice, newRuleJson, mergeRule } = window.TptFormat;
+    fieldSpec, fieldToJson, actionNeedsDevice, newRuleJson, mergeRule,
+    DEVICE_KINDS, DEVICE_PROTOCOLS, addressHint, scenesToText, deviceFromForm,
+    suggestDeviceId } = window.TptFormat;
 
   const $ = (id) => document.getElementById(id);
 
@@ -37,6 +39,7 @@
     catalogueByKind: { trigger: new Map(), condition: new Map(), action: new Map() },
     pack: null,
     devices: [],
+    devicesFile: null,
     selectedRule: null,
     editing: null, // the rule currently in the editor, as loaded from the pack
   };
@@ -123,7 +126,7 @@
         </td>
         <td><button class="btn btn-small" data-run="${esc(r.id)}">Run</button></td>
       </tr>`).join("") ||
-      `<tr><td colspan="5" class="hint">No rules yet — build one in the Rule Builder.</td></tr>`;
+      `<tr><td colspan="5" class="hint">No rules yet — build one in the Rule Builder, or start from a template on the Rules tab.</td></tr>`;
 
     rows.querySelectorAll("[data-arm]").forEach((input) => {
       input.addEventListener("change", () => {
@@ -403,6 +406,12 @@
     select.innerHTML = "";
     const needs = actionNeedsDevice($("nr-action").value);
     select.closest("label").style.display = needs ? "" : "none";
+    if (!state.devices.length && needs) {
+      const opt = document.createElement("option");
+      opt.value = "";
+      opt.textContent = "No devices yet — add one on the Devices tab";
+      select.appendChild(opt);
+    }
     for (const d of state.devices) {
       const opt = document.createElement("option");
       opt.value = d.id;
@@ -422,22 +431,169 @@
         <td>${esc(d.protocol)}</td>
         <td class="mono">${esc(d.address ?? "—")}</td>
         <td class="mono">${esc(fmtAgo(d.last_seen_ms, Date.now()))}</td>
-        <td><button class="btn btn-small" data-ping="${esc(d.id)}">Ping</button></td>
+        <td class="row-actions">
+          <button class="btn btn-small" data-ping="${esc(d.id)}">Ping</button>
+          <button class="btn btn-small" data-edit-device="${esc(d.id)}">Edit</button>
+          <button class="btn btn-small" data-remove-device="${esc(d.id)}">Delete</button>
+        </td>
       </tr>`).join("") ||
-      `<tr><td colspan="6" class="hint">No devices configured — load a device file at startup.</td></tr>`;
+      `<tr><td colspan="6" class="empty-state">
+        <strong>No devices yet.</strong>
+        <p>Devices are the projectors, lighting nodes, audio matrices and media servers your rules
+        control. Click <em>+ Add device</em> to add your first one — pick <em>virtual</em> to
+        rehearse without hardware. Devices are saved automatically.</p>
+      </td></tr>`;
+    $("devices-file-hint").textContent = state.devicesFile
+      ? `Saved to ${state.devicesFile}`
+      : "";
+
+    rows.querySelectorAll("[data-edit-device]").forEach((btn) => {
+      btn.addEventListener("click", () => openDeviceDialog(btn.dataset.editDevice));
+    });
+    rows.querySelectorAll("[data-remove-device]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const id = btn.dataset.removeDevice;
+        if (!window.confirm(`Delete device "${id}"?`)) return;
+        try {
+          const answer = await call("remove_device", { id });
+          if (answer.valid === false) { showDiagnostics("Cannot delete this device", answer); return; }
+          toast(`Device "${id}" deleted`, "ok");
+          await refresh();
+        } catch (e) { onError("Delete failed")(e); }
+      });
+    });
 
     rows.querySelectorAll("[data-ping]").forEach((btn) => {
       btn.addEventListener("click", () => {
         btn.disabled = true;
         call("ping_device", { id: btn.dataset.ping })
           .then((r) => {
-            toast(r.reachable
-              ? `Device "${r.device}" is reachable`
-              : `Device "${r.device}" did not answer`, r.reachable ? "ok" : "error");
+            const proto = (state.devices.find((d) => d.id === r.device) || {}).protocol;
+            // UDP protocols are connectionless: a ping can only prove the endpoint opened.
+            const udp = ["osc", "artnet", "sacn", "ump", "media"].includes(proto);
+            toast(!r.reachable
+              ? `Device "${r.device}" did not answer`
+              : udp
+                ? `Endpoint for "${r.device}" is ready (${proto} is connectionless, so this cannot confirm the device is listening)`
+                : `Device "${r.device}" is reachable`, r.reachable ? "ok" : "error");
           })
           .catch(onError("Ping failed"))
           .finally(() => { btn.disabled = false; });
       });
+    });
+  }
+
+  // Device dialog: add (no id) or edit (id of an existing device).
+  async function openDeviceDialog(id) {
+    const dialog = $("device-dialog");
+    let cfg = null;
+    if (id) {
+      try {
+        const all = await call("device_configs");
+        cfg = (all.devices || []).find((d) => d.id === id) || null;
+      } catch (e) { onError("Could not load the device")(e); return; }
+      if (!cfg) { toast(`Device "${id}" no longer exists`, "error"); return; }
+    }
+    const protocol = cfg ? cfg.protocol : "osc";
+    $("dd-title").textContent = cfg ? `Edit ${cfg.id}` : "Add device";
+    $("dd-id").value = cfg ? cfg.id : suggestDeviceId(protocol, state.devices.map((d) => d.id));
+    $("dd-id").disabled = !!cfg;
+    $("dd-name").value = cfg?.name ?? "";
+    $("dd-protocol").value = protocol;
+    $("dd-kind").value = cfg?.kind ?? "other";
+    $("dd-address").value = cfg?.address ?? "";
+    $("dd-heartbeat").value = cfg?.heartbeat_ms ?? "";
+    $("dd-media-video").value = cfg?.media?.video ?? "";
+    $("dd-media-audio").value = cfg?.media?.audio ?? "";
+    $("dd-scenes").value = scenesToText(cfg?.scenes);
+    dialog.dataset.editing = cfg ? cfg.id : "";
+    syncDeviceDialog();
+    dialog.showModal();
+  }
+
+  function syncDeviceDialog() {
+    const protocol = $("dd-protocol").value;
+    const { placeholder, hint } = addressHint(protocol);
+    $("dd-address").placeholder = placeholder ?? "";
+    $("dd-address").closest("label").style.display = placeholder === null ? "none" : "";
+    $("dd-address-hint").textContent = hint;
+    $("dd-media").style.display = protocol === "media" ? "" : "none";
+    const dmx = ["artnet", "sacn", "dmx512", "virtual"].includes(protocol);
+    $("dd-scenes-row").style.display = dmx ? "" : "none";
+    $("dd-scenes-hint").style.display = dmx ? "" : "none";
+  }
+
+  function showDiagnostics(title, answer) {
+    const diags = (answer.diagnostics ?? []).map((d) => `${d.location}: ${d.message}`).join("\n");
+    toast(`${title}:\n${diags}`, "error");
+  }
+
+  function wireTemplateDialog() {
+    const dialog = $("template-dialog");
+    let list = [];
+    const about = () => {
+      const t = list.find((x) => x.name === $("tp-select").value);
+      $("tp-about").textContent = t ? t.about : "";
+    };
+    $("btn-template").addEventListener("click", async () => {
+      try { list = await call("templates"); } catch (e) { onError("Could not load templates")(e); return; }
+      $("tp-select").innerHTML = "";
+      for (const t of list) $("tp-select").add(new Option(t.name, t.name));
+      about();
+      dialog.showModal();
+    });
+    $("tp-select").addEventListener("change", about);
+    $("tp-cancel").addEventListener("click", () => dialog.close());
+    $("tp-apply").addEventListener("click", async () => {
+      const name = $("tp-select").value;
+      try {
+        const answer = await call("apply_template", { name });
+        if (answer.valid === false) { showDiagnostics("The template was rejected", answer); return; }
+        dialog.close();
+        const rules = (answer.added_rules || []).length;
+        const devs = (answer.added_devices || []).length;
+        toast(`Added ${rules} rule(s) and ${devs} device(s) from "${name}". Rules start disarmed.`, "ok");
+        await refresh();
+      } catch (e) { onError("Template failed")(e); }
+    });
+  }
+
+  function wireDeviceDialog() {
+    const dialog = $("device-dialog");
+    for (const p of DEVICE_PROTOCOLS) $("dd-protocol").add(new Option(p, p));
+    for (const k of DEVICE_KINDS) $("dd-kind").add(new Option(k, k));
+    $("btn-add-device").addEventListener("click", () => openDeviceDialog(null));
+    $("dd-cancel").addEventListener("click", () => dialog.close());
+    $("dd-protocol").addEventListener("change", () => {
+      syncDeviceDialog();
+      if (!dialog.dataset.editing) {
+        $("dd-id").value = suggestDeviceId($("dd-protocol").value, state.devices.map((d) => d.id));
+      }
+    });
+    $("dd-save").addEventListener("click", async () => {
+      const built = deviceFromForm({
+        id: $("dd-id").value,
+        name: $("dd-name").value,
+        kind: $("dd-kind").value,
+        protocol: $("dd-protocol").value,
+        address: $("dd-address").value,
+        heartbeat_ms: $("dd-heartbeat").value,
+        scenes: $("dd-scenes-row").style.display === "none" ? "" : $("dd-scenes").value,
+        media_video: $("dd-media-video").value,
+        media_audio: $("dd-media-audio").value,
+      });
+      if (built.error) { toast(built.error, "error"); return; }
+      if (!dialog.dataset.editing && state.devices.some((d) => d.id === built.device.id)) {
+        toast(`A device with id "${built.device.id}" already exists`, "error");
+        return;
+      }
+      try {
+        const answer = await call("upsert_device", { device: built.device });
+        if (answer.valid === false) { showDiagnostics("This device was rejected", answer); return; }
+        dialog.close();
+        toast(`Device "${built.device.id}" saved`, "ok");
+        await refresh();
+      } catch (e) { onError("Save failed")(e); }
     });
   }
 
@@ -597,9 +753,14 @@
   }
 
   let refreshSeq = 0;
+  async function loadDevicesFile() {
+    try { state.devicesFile = (await call("app_info")).devices_file ?? null; } catch { /* hint only */ }
+  }
+
   async function refresh() {
     const seq = ++refreshSeq;
     let board = null;
+    if (state.devicesFile === null) await loadDevicesFile();
     try {
       board = await call("dashboard");
       if (seq !== refreshSeq) return;
@@ -691,6 +852,9 @@
       const entry = state.catalogue.find((g) => g.kind === "action").entries[0];
       chainItem(list, JSON.parse(JSON.stringify(entry.example)), "action", list.children.length);
     });
+
+    wireDeviceDialog();
+    wireTemplateDialog();
 
     // New-rule dialog.
     const dialog = $("new-rule-dialog");

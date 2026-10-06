@@ -623,3 +623,55 @@ fn the_watchdog_restarts_a_forcibly_killed_engine() {
         matches!(read_pid(&pid_file), Some(pid) if pid != second_pid) && health(api_port).is_some()
     });
 }
+
+#[test]
+fn init_scaffolds_a_show_that_validates_and_simulates() {
+    let dir = TempDir::new("init");
+    let show = dir.path().join("show");
+    let show_arg = show.to_str().unwrap();
+
+    let made = cli(&["init", show_arg]);
+    assert_eq!(code(&made), 0, "{}", stderr(&made));
+    for file in ["pack.yaml", "devices.yaml", "service.yaml"] {
+        assert!(show.join(file).exists(), "{file} should be created");
+    }
+
+    let rules = show.join("pack.yaml");
+    let devices = show.join("devices.yaml");
+    let config = show.join("service.yaml");
+    let valid = cli(&[
+        "validate",
+        "--rules",
+        rules.to_str().unwrap(),
+        "--devices",
+        devices.to_str().unwrap(),
+        "--config",
+        config.to_str().unwrap(),
+    ]);
+    assert_eq!(code(&valid), 0, "{}", stderr(&valid));
+
+    let sim = cli(&[
+        "simulate",
+        "--rules",
+        rules.to_str().unwrap(),
+        "--devices",
+        devices.to_str().unwrap(),
+        "--event",
+        "manual:start-show",
+    ]);
+    assert!(stdout(&sim).contains("SIMULATION"), "{}", stdout(&sim));
+
+    // Existing files are never clobbered without --force.
+    assert_eq!(code(&cli(&["init", show_arg])), 4);
+    assert_eq!(code(&cli(&["init", show_arg, "--force"])), 0);
+}
+
+#[test]
+fn init_lists_templates_and_rejects_unknown_ones() {
+    let listed = cli(&["init", "--list"]);
+    assert_eq!(code(&listed), 0);
+    assert!(stdout(&listed).contains("classroom"));
+    let dir = TempDir::new("init-bad");
+    let bad = cli(&["init", dir.path().to_str().unwrap(), "--template", "nope"]);
+    assert_eq!(code(&bad), 4, "{}", stderr(&bad));
+}

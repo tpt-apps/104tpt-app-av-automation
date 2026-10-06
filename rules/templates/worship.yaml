@@ -1,0 +1,22 @@
+# House of worship: Sunday service start, with the operator told once the room is ready.
+format_version: 1
+name: Sunday Service
+revision: 1
+rules:
+  - id: service-start
+    name: Service start
+    armed: false
+    trigger: { type: schedule, at: "09:50", days: [sun] }
+    actions:
+      - { id: lights, type: control.dmx_scene, device: lighting, scene: service, fade_ms: 4000 }
+      - { id: projector-on, type: control.osc, device: projector, address: /power, args: [1] }
+      - { id: sound-on, type: control.osc, device: sound, address: /power, args: [1] }
+      - { id: ready, type: notify.operator, message: Sanctuary is ready for the service }
+    policy: { on_failure: continue_chain, timeout_ms: 15000 }
+  - id: service-end
+    name: After the service
+    armed: false
+    trigger: { type: schedule, at: "12:30", days: [sun] }
+    actions:
+      - { id: lights-dim, type: control.dmx_scene, device: lighting, scene: dim, fade_ms: 5000 }
+      - { id: projector-off, type: control.osc, device: projector, address: /power, args: [0] }

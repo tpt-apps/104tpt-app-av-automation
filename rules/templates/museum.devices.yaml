@@ -1,0 +1,10 @@
+devices:
+  - { id: media-server, name: Exhibit Media Server, kind: media, protocol: media, address: "192.168.5.10:9002" }
+  - id: gallery-lights
+    name: Gallery Lights
+    kind: lighting
+    protocol: artnet
+    address: "192.168.5.20:6454"
+    scenes:
+      open: { universe: 1, start_channel: 0, values: [220, 220] }
+      closed: { universe: 1, start_channel: 0, values: [0, 0] }

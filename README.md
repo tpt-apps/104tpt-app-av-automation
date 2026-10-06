@@ -47,13 +47,37 @@ tpt-av-automation simulate --rules rules/live-event/main-hall-event-start.yaml \
                            --event schedule:18:55 --health projector-1=online
 
 # 3. Run it, headless, with state that survives restarts
-tpt-av-automation run --service --rules main-hall.yaml --devices devices.yaml \
-                      --state-dir ./state
+tpt-av-automation run --service --rules rules/live-event/main-hall-event-start.yaml \
+                      --devices rules/examples/devices.yaml --state-dir ./state
 
 # 4. ...supervised: restart the engine if it is ever killed
-tpt-av-automation watchdog -- run --service --rules main-hall.yaml --devices devices.yaml \
-                                  --state-dir ./state
+tpt-av-automation watchdog -- run --service --rules rules/live-event/main-hall-event-start.yaml \
+                                  --devices rules/examples/devices.yaml --state-dir ./state
 ```
+
+No equipment to hand? `tpt-av-automation init my-show` creates a folder with a working pack, a
+device list on virtual devices and service settings; `init --list` shows the other starting points
+(classroom, meeting room, worship, theatre, museum, exterior lights, failover). The same files live
+in [`rules/templates/`](rules/templates/README.md).
+
+Building from source needs the sibling checkout `../tpt-av-control` next to this folder (the
+OSC/MIDI/DMX protocol crates). Windows users can skip the build and use the installer.
+
+### Devices
+
+A rule never talks to hardware directly: it names a **device** (`projector-1`, `lighting-rack`),
+and the device list says how to reach it. In the desktop app, add devices from the **Devices** tab
+(**+ Add device**); they are saved automatically. For the CLI and service, write a `devices.yaml`:
+
+```yaml
+devices:
+  - { id: projector-1, kind: display, protocol: osc,     address: "192.168.1.50:9000" }
+  - { id: rehearsal,   kind: other,   protocol: virtual }   # no hardware: records commands
+```
+
+The full field reference, one example per protocol and the validation rules are in
+[`docs/devices.md`](docs/devices.md); a complete sample is
+[`rules/examples/devices.yaml`](rules/examples/devices.yaml).
 
 Rules load **disarmed** unless the YAML says `armed: true`; a disarmed rule is evaluated and logged
 but never sends anything.
@@ -61,8 +85,8 @@ but never sends anything.
 ### Desktop app
 
 The desktop shell embeds the same engine: dashboard with armed states and device health, a visual
-rule builder that round-trips to the pack YAML, a device manager with manual pings, and the
-execution timeline with filters. The LIVE / SIMULATION banner is always on screen.
+rule builder that round-trips to the pack YAML, a device manager (add, edit, delete and ping
+devices), and the execution timeline with filters. The LIVE / SIMULATION banner is always on screen.
 
 ```sh
 cargo build --manifest-path crates/tpt-app-av-automation-tauri/Cargo.toml   # not in the default workspace
@@ -102,7 +126,8 @@ crate is excluded from the default workspace because it needs the Tauri/WebView2
 | `test` | shared fixtures for golden and chaos tests |
 | `tauri` | the desktop app (own manifest; embeds the service) |
 
-Design documents are in [`docs/`](docs/); deployment notes (Windows package, systemd unit) are in
+Design documents are in [`docs/`](docs/) (start with [`docs/devices.md`](docs/devices.md) and
+[`docs/troubleshooting.md`](docs/troubleshooting.md)); deployment notes (Windows package, systemd unit) are in
 [`docs/deployment.md`](docs/deployment.md).
 
 ## Offline by design

@@ -104,7 +104,10 @@
         <div class="rules-list panel">
           <div class="panel-head">
             <h2>Rules</h2>
-            <button class="btn btn-primary" id="btn-new-rule">+ New rule</button>
+            <span>
+              <button class="btn" id="btn-template">From template</button>
+              <button class="btn btn-primary" id="btn-new-rule">+ New rule</button>
+            </span>
           </div>
           <div id="rule-cards"></div>
         </div>
@@ -161,7 +164,9 @@
         <div class="panel-head">
           <h2>Devices</h2>
           <span class="hint" id="devices-hint">health comes from inbound traffic and endpoint probes</span>
+          <button class="btn btn-primary" id="btn-add-device">+ Add device</button>
         </div>
+        <p class="hint" id="devices-file-hint"></p>
         <table class="table">
           <thead>
             <tr><th>Health</th><th>Device</th><th>Protocol</th><th>Address</th><th>Last seen</th><th></th></tr>
@@ -266,6 +271,48 @@
       <div class="dialog-actions">
         <button type="button" class="btn btn-ghost" id="nr-cancel">Cancel</button>
         <button type="button" class="btn btn-primary" id="nr-create">Create rule</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="template-dialog">
+    <form method="dialog" class="dialog-body">
+      <h2>Start from a template</h2>
+      <label>Template <select id="tp-select"></select></label>
+      <p class="hint" id="tp-about"></p>
+      <p class="hint">Adds the template's rules (disarmed) and any devices you do not already have.
+        Existing rules and devices are kept. Change the device addresses afterwards on the Devices
+        tab.</p>
+      <div class="dialog-actions">
+        <button type="button" class="btn btn-ghost" id="tp-cancel">Cancel</button>
+        <button type="button" class="btn btn-primary" id="tp-apply">Add to my show</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="device-dialog">
+    <form method="dialog" class="dialog-body">
+      <h2 id="dd-title">Add device</h2>
+      <div class="form-grid">
+        <label>Id <input type="text" id="dd-id" placeholder="projector-1" /></label>
+        <label>Name <input type="text" id="dd-name" placeholder="Projector 1" /></label>
+        <label>Protocol <select id="dd-protocol"></select></label>
+        <label>Kind <select id="dd-kind"></select></label>
+        <label class="span2">Address <input type="text" id="dd-address" /></label>
+        <p class="hint span2" id="dd-address-hint"></p>
+        <label class="span2">Heartbeat (ms, optional) <input type="text" id="dd-heartbeat" placeholder="15000" /></label>
+        <div class="span2" id="dd-media" style="display:none">
+          <label>Video address template <input type="text" id="dd-media-video" placeholder="/media/video/{source}/{operation}" /></label>
+          <label>Audio address template <input type="text" id="dd-media-audio" placeholder="/media/audio/{from}/{to}/{operation}" /></label>
+        </div>
+        <label class="span2" id="dd-scenes-row">DMX scenes (optional)
+          <textarea id="dd-scenes" rows="3" placeholder="house-half | 1 | 0 | 128,128,128,128"></textarea>
+        </label>
+        <p class="hint span2" id="dd-scenes-hint">One per line: name | universe | start channel | values</p>
+      </div>
+      <div class="dialog-actions">
+        <button type="button" class="btn btn-ghost" id="dd-cancel">Cancel</button>
+        <button type="button" class="btn btn-primary" id="dd-save">Save device</button>
       </div>
     </form>
   </dialog>

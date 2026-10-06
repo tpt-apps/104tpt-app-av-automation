@@ -1,0 +1,20 @@
+# Meeting room: a "join" cue from the room's control panel (OSC /room/join) wakes the display and
+# sets the lights; "/room/leave" puts everything to sleep.
+format_version: 1
+name: Meeting Room
+revision: 1
+rules:
+  - id: room-join
+    name: Join meeting
+    armed: false
+    trigger: { type: osc, address: /room/join }
+    actions:
+      - { id: display-on, type: control.osc, device: display, address: /power, args: [1] }
+      - { id: lights-up, type: control.dmx_scene, device: lights, scene: meeting, fade_ms: 1500 }
+  - id: room-leave
+    name: Leave meeting
+    armed: false
+    trigger: { type: osc, address: /room/leave }
+    actions:
+      - { id: display-off, type: control.osc, device: display, address: /power, args: [0] }
+      - { id: lights-off, type: control.dmx_scene, device: lights, scene: "off", fade_ms: 3000 }

@@ -43,12 +43,7 @@ that runs the watchdog, which runs the engine.
 
 **Status:** validated on Ubuntu 24.04 under WSL2 with real systemd (full test suite on Linux; kill
 engine -> watchdog restart; kill watchdog -> systemd restart; clean `systemctl stop`). Not yet run on
-a bare-metal host. Original notes: the unit file and the code paths it relies on (the watchdog, `--state-dir`, signal
-handling through `ctrlc` with the `termination` feature so `SIGTERM` stops the engine cleanly) are
-written, but **not validated on a Linux host** — the development machine is Windows. The unit-test and
-integration suites are written to be portable (no Windows-only APIs outside `cfg(windows)` helpers), but
-have only been run on Windows. Treat Linux deployment as unverified until that item in `todo.md` is
-closed.
+a bare-metal host.
 
 ## Files and ports
 

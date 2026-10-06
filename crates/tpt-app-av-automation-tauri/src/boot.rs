@@ -41,6 +41,13 @@ pub struct Loaded {
     pub devices: DeviceFile,
     /// Where the state database lives (persisted by default).
     pub state_db: Option<PathBuf>,
+    /// The rule pack file every edit made in the app is written to: the one named in the settings,
+    /// else `pack.yaml` beside the state database (created on the first change). The next start
+    /// loads it, so work done in the rule builder is never lost.
+    pub pack_path: Option<PathBuf>,
+    /// The device file edits made in the app are written to: the one named in the settings, else
+    /// `devices.yaml` next to the state database (created on the first edit).
+    pub devices_path: Option<PathBuf>,
 }
 
 impl DesktopConfig {
@@ -74,25 +81,42 @@ pub fn default_state_db() -> Option<PathBuf> {
     base.map(|dir| dir.join("tpt-av-automation").join("state.db"))
 }
 
+/// The file used when the settings name none: `name` beside the state database.
+fn default_sibling(config: &DesktopConfig, name: &str) -> Option<PathBuf> {
+    let db = config.service.state_db.as_ref()?;
+    Some(db.parent()?.join(name))
+}
+
 /// Loads the pack, devices and settings named by `config`.
 pub fn load(config: DesktopConfig) -> Result<Loaded> {
-    let pack = match &config.pack {
-        Some(path) => RulePack::from_path(path)?,
-        None => RulePack::new("New Show"),
-    };
-    let devices = match &config.devices {
-        Some(path) => DeviceFile::from_path(path)?,
-        None => DeviceFile::default(),
-    };
     let mut config = config;
     if config.service.state_db.is_none() {
         config.service.state_db = default_state_db();
     }
+    let pack_path = config
+        .pack
+        .clone()
+        .or_else(|| default_sibling(&config, "pack.yaml"));
+    let pack = match &pack_path {
+        Some(path) if path.exists() || config.pack.is_some() => RulePack::from_path(path)?,
+        _ => RulePack::new("New Show"),
+    };
+    let devices_path = config
+        .devices
+        .clone()
+        .or_else(|| default_sibling(&config, "devices.yaml"));
+    let devices = match &devices_path {
+        Some(path) if path.exists() => DeviceFile::from_path(path)?,
+        Some(path) if config.devices.is_some() => DeviceFile::from_path(path)?,
+        _ => DeviceFile::default(),
+    };
     Ok(Loaded {
         state_db: config.service.state_db.clone(),
         config,
         pack,
+        pack_path,
         devices,
+        devices_path,
     })
 }
 
@@ -110,13 +134,19 @@ pub fn spawn(loaded: Loaded) -> Result<(UiBridge, JoinHandle<()>)> {
         }
         None => None,
     };
-    let service = Service::build(
+    let mut service = Service::build(
         loaded.pack,
         loaded.devices,
         loaded.config.service.clone(),
         store,
         Arc::new(tpt_app_av_automation_core::SystemClock),
     )?;
+    if let Some(path) = loaded.devices_path {
+        service.set_devices_path(path);
+    }
+    if let Some(path) = loaded.pack_path {
+        service.set_pack_path(path);
+    }
     let bridge = UiBridge::new(service.handle());
     let handle = bridge.handle().clone();
     let worker = std::thread::Builder::new()
@@ -183,10 +213,75 @@ mod tests {
     #[test]
     fn load_without_files_starts_an_empty_pack_and_default_database() {
         let loaded = load(DesktopConfig::default()).unwrap();
-        assert_eq!(loaded.pack.name, "New Show");
-        assert_eq!(loaded.pack.rules.len(), 0);
-        assert_eq!(loaded.devices.devices.len(), 0);
         assert!(loaded.state_db.is_some(), "the desktop persists by default");
+        assert!(loaded.pack_path.is_some() && loaded.devices_path.is_some());
+    }
+
+    #[test]
+    fn rules_built_in_the_app_survive_a_restart() {
+        let dir = std::env::temp_dir().join(format!("tpt-av-tauri-pack-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let config = || DesktopConfig {
+            service: ServiceConfig {
+                tick_ms: 10,
+                state_db: Some(dir.join("state.db")),
+                ..ServiceConfig::default()
+            },
+            ..DesktopConfig::default()
+        };
+
+        let first = load(config()).unwrap();
+        assert_eq!(first.pack.name, "New Show");
+        assert_eq!(first.pack.rules.len(), 0);
+        let (bridge, worker) = spawn(first).unwrap();
+        let answer = bridge
+            .upsert_rule(serde_json::json!({
+                "name": "Go", "trigger": {"type": "manual"},
+                "actions": [{"type": "notify.operator", "message": "hi"}]
+            }))
+            .unwrap();
+        assert_ne!(answer["valid"], false, "{answer}");
+        bridge.handle().shutdown();
+        worker.join().unwrap();
+
+        assert!(dir.join("pack.yaml").exists(), "the pack is written beside the database");
+        let second = load(config()).unwrap();
+        assert_eq!(second.pack.rules.len(), 1, "the rule is loaded again on the next start");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn devices_default_to_a_file_beside_the_database_and_load_when_present() {
+        let dir = std::env::temp_dir().join(format!("tpt-av-tauri-dev-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let config = || DesktopConfig {
+            service: ServiceConfig {
+                state_db: Some(dir.join("state.db")),
+                ..ServiceConfig::default()
+            },
+            ..DesktopConfig::default()
+        };
+
+        let first = load(config()).unwrap();
+        assert_eq!(first.devices_path.as_deref(), Some(dir.join("devices.yaml").as_path()));
+        assert_eq!(first.devices.devices.len(), 0, "no file yet is an empty registry");
+
+        // The first edit made in the app creates the file; the next start loads it.
+        let (bridge, worker) = spawn(first).unwrap();
+        let answer = bridge
+            .upsert_device(serde_json::json!({"id": "cam", "protocol": "virtual"}))
+            .unwrap();
+        assert_eq!(answer["valid"], true);
+        bridge.handle().shutdown();
+        worker.join().unwrap();
+
+        assert!(dir.join("devices.yaml").exists());
+        assert!(!dir.join("devices.yaml.bak").exists(), "nothing to back up the first time");
+        let second = load(config()).unwrap();
+        assert_eq!(second.devices.devices.len(), 1);
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]

@@ -8,6 +8,7 @@ use tpt_app_av_automation_core::{Diagnostic, Error, Result};
 
 /// A UDP listener for inbound control traffic.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ListenerConfig {
     /// `osc`, `artnet`, `sacn`, `ump` or `midi`.
     ///
@@ -20,6 +21,7 @@ pub struct ListenerConfig {
 
 /// The local API (spec §14). Disabled by default.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ApiConfig {
     /// Master switch. Off unless explicitly enabled.
     #[serde(default)]
@@ -48,6 +50,7 @@ impl Default for ApiConfig {
 
 /// Everything the service needs besides the rule pack and device file.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ServiceConfig {
     /// SQLite database path. `None` disables persistence (state is lost on restart).
     #[serde(default)]

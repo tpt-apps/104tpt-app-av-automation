@@ -239,6 +239,37 @@ impl UiBridge {
         self.control(ControlRequest::PingDevice(id.to_owned()))
     }
 
+    /// The built-in starter templates.
+    pub fn templates() -> Value {
+        Value::Array(
+            crate::templates::all()
+                .iter()
+                .map(|t| json!({ "name": t.name, "about": t.about }))
+                .collect(),
+        )
+    }
+
+    /// Adds a template's rules and devices; the answer lists what was added.
+    pub fn apply_template(&self, name: &str) -> Result<Value, String> {
+        self.control(ControlRequest::ApplyTemplate(name.to_owned()))
+    }
+
+    /// The full device configuration, for the device editor.
+    pub fn device_configs(&self) -> Result<Value, String> {
+        self.control(ControlRequest::DeviceConfigs)
+    }
+
+    /// Adds or replaces one device from its JSON configuration; the answer is `valid: true` or
+    /// `valid: false` with diagnostics, like the rule editor.
+    pub fn upsert_device(&self, device: Value) -> Result<Value, String> {
+        self.control(ControlRequest::UpsertDevice(device))
+    }
+
+    /// Removes a device; refused (with diagnostics) while a rule still uses it.
+    pub fn remove_device(&self, id: &str) -> Result<Value, String> {
+        self.control(ControlRequest::RemoveDevice(id.to_owned()))
+    }
+
     /// The catalogue of triggers, conditions and actions the builder can insert, each with a
     /// canonical valid example. A test pins every example to the real model types, so the
     /// catalogue cannot drift out of the rule format (spec §12.2).
