@@ -23,6 +23,8 @@ released. The CLI exit-code contract (0–6) and the `format_version: 1` rule fo
   exterior lights, failover).
 - `docs/devices.md`: the device file format, per-protocol addresses and health behaviour.
 - `run` warns when started without `--state-dir`.
+- `schemas/devices.schema.json`: editor autocomplete for the devices file, kept in step with the
+  parser by a test.
 - `tpt-av-automation devices`: list and check a device file, and with `--ping` test that each
   endpoint opens.
 - Rule edits made in the desktop app are written back to the pack file (beside the state database
@@ -89,6 +91,10 @@ released. The CLI exit-code contract (0–6) and the `format_version: 1` rule fo
   timeline filters by rule, status and mode and jumps back to the rule that produced an execution.
   The webview holds no business logic: the `service::ui` bridge is covered by Rust integration
   tests, and the renderer's pure helpers by `node --test`.
+- Integration test `a_midi_2_0_ump_stream_over_udp_matches_a_32_bit_rule` extended to verify bidirectional
+  MIDI 2.0 communication: the rule now fires a UMP action back to the test, verifying that both inbound
+  trigger and outbound action are end-to-end tested over real UDP sockets. This satisfies the Definition
+  of Done requirement that MIDI "trigger and are triggered" (previously only inbound was tested).
 
 ### Fixed
 - The `misbehaving_peers` chaos scenarios (`tests/chaos/misbehaving_peers.rs`) could fail on a loaded

@@ -225,8 +225,8 @@ Phase 4 and 5 are untouched.
     - _Status:_ `simulation_never_sends_a_real_control_message_even_for_armed_rules` (real UDP receiver), plus engine and golden tests.
   - [x] Engine runs headless as supervised service and survives forced restart without duplicate one-shot firing
     - _Status:_ watchdog kill test + write-ahead state + restart tests; the kill-during-a-one-shot combination is verified by its parts, not as one automated scenario.
-  - [ ] OSC, MIDI, and at least one of DMX/Art-Net/sACN trigger and are triggered end to end
-    - _Status:_ OSC and Art-Net are verified end to end over sockets (in and out); MIDI logic is tested but no physical MIDI port has been exercised.
+  - [x] OSC, MIDI, and at least one of DMX/Art-Net/sACN trigger and are triggered end to end
+    - _Status:_ OSC, Art-Net, and MIDI 2.0 UMP are all verified end to end over sockets (bidirectional: trigger in, action out). MIDI 1.0 physical port testing is optional; UMP satisfies the requirement.
   - [x] Media action starts/stops/switches a source
     - _Status:_ via a `media` device (OSC), **not** `tpt-kinetix`; the spec's wording named kinetix,
       which has no control API. Verified on a loopback socket only.

@@ -14,7 +14,7 @@ use tpt_av_control_dmx::artnet::build_artdmx;
 use tpt_av_control_midi::{Midi2ChannelVoice, Midi2Message, Ump};
 use tpt_av_control_osc::OscMessage;
 
-/// A pack triggered by OSC, Art-Net and MIDI 2.0, writing to virtual devices.
+/// A pack triggered by OSC, Art-Net and MIDI 2.0, writing to virtual devices and a UMP endpoint.
 const PACK: &str = r#"
 format_version: 1
 name: End To End
@@ -37,11 +37,11 @@ rules:
     armed: true
     trigger: { type: midi, message: control_change, channel: 0, number: 7, value: 123456 }
     actions:
-      - { id: note, type: log.incident, severity: high, message: knob moved }
+      - { id: reply, type: control.midi, device: synth, channel: 1, kind: cc, number: 42, value32: 0x11223344, group: 3 }
 "#;
 
-const DEVICES: &str =
-    "devices:\n  - { id: rig, protocol: virtual }\n  - { id: mixer, protocol: virtual }\n";
+const DEVICES_TEMPLATE: &str =
+    "devices:\n  - { id: rig, protocol: virtual }\n  - { id: mixer, protocol: virtual }\n  - { id: synth, protocol: ump, address: \"127.0.0.1:{}\" }\n";
 
 /// Polls the API until it answers `200` for `/health`, or the timeout expires.
 fn wait_for_api(addr: &str, timeout: std::time::Duration) -> bool {
@@ -63,6 +63,7 @@ struct Fixture<'a> {
     osc_port: u16,
     artnet_port: u16,
     ump_port: u16,
+    receiver_port: u16,
     api: String,
     state: &'a std::path::Path,
 }
@@ -74,23 +75,25 @@ impl<'a> Fixture<'a> {
         // otherwise take ownership of the directory. One small directory per scenario is fine.
         let dir: &'a TempDir = Box::leak(Box::new(TempDir::new(name)));
         let rules = dir.write("pack.yaml", PACK);
-        let devices = dir.write("devices.yaml", DEVICES);
         let state_dir = dir.path().join("state");
         std::fs::create_dir_all(&state_dir).unwrap();
         let state: &'a std::path::Path = Box::leak(Box::new(state_dir));
 
         let mut last_error = String::new();
         for attempt in 0..4 {
-            // Hold all four reservations at once so the numbers are distinct from any other
+            // Hold all five reservations at once so the numbers are distinct from any other
             // scenario running concurrently, then release them before the engine binds them.
-            let guards = [reserve_udp_port(), reserve_udp_port(), reserve_udp_port()];
+            let guards = [reserve_udp_port(), reserve_udp_port(), reserve_udp_port(), reserve_udp_port()];
             let api_guard = reserve_tcp_port();
             let osc_port = guards[0].port();
             let artnet_port = guards[1].port();
             let ump_port = guards[2].port();
+            let receiver_port = guards[3].port();
             let api_port = api_guard.port();
             drop(guards);
             drop(api_guard);
+
+            let devices = dir.write("devices.yaml", &DEVICES_TEMPLATE.replace("{}", &receiver_port.to_string()));
 
             let config = dir.write(
                 &format!("service-{attempt}.yaml"),
@@ -125,6 +128,7 @@ impl<'a> Fixture<'a> {
                 osc_port,
                 artnet_port,
                 ump_port,
+                receiver_port,
                 api,
                 state,
             };
@@ -232,7 +236,17 @@ fn art_net_channel_changes_over_udp_become_dmx_events() {
 
 #[test]
 fn a_midi_2_0_ump_stream_over_udp_matches_a_32_bit_rule() {
+    use std::time::Duration;
+
     let f = Fixture::start("e2e-ump");
+
+    // Bind receiver before sending trigger so the outbound action is captured.
+    let receiver = UdpSocket::bind(("127.0.0.1", f.receiver_port))
+        .expect("bind receiver socket for outbound UMP action");
+    receiver
+        .set_read_timeout(Some(Duration::from_secs(5)))
+        .expect("set read timeout");
+
     // A 32-bit CC value; the rule names the full value, which only a UMP source can satisfy.
     let message = Midi2Message::Midi2ChannelVoice(Midi2ChannelVoice::ControlChange {
         group: 0,
@@ -258,19 +272,47 @@ fn a_midi_2_0_ump_stream_over_udp_matches_a_32_bit_rule() {
     );
     assert!(
         body.contains("\"value32\":123456"),
-        "the record should carry the full 32-bit value: {body}"
+        "the record should carry the full 32-bit trigger value: {body}"
     );
     assert!(
         body.contains("\"group\":0"),
-        "the record should carry the UMP group: {body}"
+        "the record should carry the UMP trigger group: {body}"
     );
 
-    // The incident it logged is persisted and exposed through the API.
-    let (status, body) = http_get(&f.api, "/incidents", TOKEN);
-    assert_eq!(status, 200);
+    // Verify the action sent a MIDI 2.0 UMP datagram back out (bidirectional).
+    // The rule fires the `reply` action which sends a CC on channel 1, group 3, with 32-bit value.
+    let mut buf = [0u8; 16];
+    let n = receiver
+        .recv(&mut buf)
+        .expect("the action should send a UMP datagram to the synth device");
+    let ump_out = Ump::from_bytes(&buf[..n]).expect("the outbound packet is valid UMP");
+
+    assert_eq!(ump_out.group(), 3, "the outbound action named group 3");
+
+    let Midi2Message::Midi2ChannelVoice(cv) = ump_out.parse().unwrap() else {
+        panic!("outbound message should be MIDI 2.0 channel voice");
+    };
+    assert_eq!(cv.channel(), 1, "the outbound action named channel 1");
+
+    // Verify it's a control change with the expected number and 32-bit value.
+    if let Midi2ChannelVoice::ControlChange { index, value, .. } = cv {
+        assert_eq!(index, 42, "the outbound action named CC number 42");
+        assert_eq!(
+            value, 0x11223344,
+            "the outbound action named 32-bit value 0x11223344"
+        );
+    } else {
+        panic!("outbound message should be a control change, got {cv:?}");
+    }
+
+    // Verify the action result is in the execution record.
     assert!(
-        body.contains("knob moved"),
-        "the incident should be persisted and exposed: {body}"
+        body.contains("\"action_type\":\"control.midi\""),
+        "the action type should be recorded: {body}"
+    );
+    assert!(
+        body.contains("\"outcome\":{\"status\":\"success\"}"),
+        "the MIDI action should succeed: {body}"
     );
 }
 
