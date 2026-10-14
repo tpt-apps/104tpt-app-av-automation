@@ -1,0 +1,73 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "TPT AV Automation devices file",
+  "description": "The devices.yaml file: the equipment rules control. See docs/devices.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "devices": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/device" }
+    }
+  },
+  "definitions": {
+    "device": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "protocol"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._-]+$",
+          "description": "Identifier rules refer to. Letters, digits, - _ and . only."
+        },
+        "name": { "type": "string", "description": "Display name; defaults to the id." },
+        "kind": {
+          "enum": ["lighting", "display", "audio", "switcher", "media", "other"],
+          "default": "other"
+        },
+        "protocol": {
+          "enum": ["osc", "artnet", "sacn", "midi", "ump", "dmx512", "media", "virtual"],
+          "description": "How the device is reached."
+        },
+        "address": {
+          "type": "string",
+          "description": "host:port for osc, artnet, sacn, ump and media; part of the MIDI output port name for midi; the serial port (COM3, /dev/ttyUSB0) for dmx512; unused for virtual."
+        },
+        "heartbeat_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 86400000,
+          "description": "Heartbeat deadline in milliseconds."
+        },
+        "scenes": {
+          "type": "object",
+          "description": "Named DMX scenes recalled by control.dmx_scene.",
+          "additionalProperties": { "$ref": "#/definitions/scene" }
+        },
+        "media": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "OSC address templates for a media device.",
+          "properties": {
+            "video": { "type": "string", "description": "Must start with / and contain {source}." },
+            "audio": { "type": "string", "description": "Must start with / and contain {from} and {to}." }
+          }
+        }
+      }
+    },
+    "scene": {
+      "type": "object",
+      "required": ["universe", "values"],
+      "properties": {
+        "universe": { "type": "integer", "minimum": 0, "maximum": 65535 },
+        "start_channel": { "type": "integer", "minimum": 0, "maximum": 511, "default": 0 },
+        "values": {
+          "type": "array",
+          "maxItems": 512,
+          "items": { "type": "integer", "minimum": 0, "maximum": 255 }
+        }
+      }
+    }
+  }
+}

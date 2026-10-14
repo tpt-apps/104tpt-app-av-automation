@@ -92,6 +92,18 @@ A scene must fit inside 512 channels (`start_channel` + number of values). A `dm
 carries universe 1 only. In the app, scenes are typed one per line as
 `name | universe | start channel | values`.
 
+## Editor autocomplete
+
+[`schemas/devices.schema.json`](../schemas/devices.schema.json) is a JSON Schema for the file. With
+the YAML extension for VS Code (or any editor that understands `yaml-language-server`), add this
+as the first line of your `devices.yaml` to get completion and inline errors while you type:
+
+```yaml
+# yaml-language-server: $schema=path/to/schemas/devices.schema.json
+```
+
+A test keeps the schema in step with the parser.
+
 ## What is checked
 
 Saving a device in the app, or running `validate`, rejects:

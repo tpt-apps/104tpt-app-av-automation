@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=../../schemas/devices.schema.json
 # Device registry for the example packs. Network devices are reached over UDP; `virtual` devices
 # record commands in memory and are handy for rehearsing a pack without hardware.
 devices:

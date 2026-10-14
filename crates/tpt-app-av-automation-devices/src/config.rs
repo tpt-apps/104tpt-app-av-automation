@@ -388,6 +388,72 @@ devices:
         .is_err());
     }
 
+    /// The published JSON Schema (editor autocomplete) must describe exactly what the parser accepts.
+    #[test]
+    fn the_json_schema_matches_the_parser() {
+        let schema: serde_json::Value =
+            serde_json::from_str(include_str!("../../../schemas/devices.schema.json")).unwrap();
+        let device = &schema["definitions"]["device"];
+
+        // Every field a fully populated device serializes to is described, and nothing else is.
+        let full = DeviceConfig {
+            id: "a".into(),
+            name: Some("A".into()),
+            kind: DeviceKind::default(),
+            protocol: "media".into(),
+            address: Some("h:1".into()),
+            heartbeat_ms: Some(1),
+            scenes: [(
+                "s".to_string(),
+                SceneDef {
+                    universe: 1,
+                    start_channel: 0,
+                    values: vec![1],
+                },
+            )]
+            .into(),
+            media: Some(crate::media::MediaTemplates {
+                video: Some("/v/{source}".into()),
+                audio: Some("/a/{from}/{to}".into()),
+            }),
+        };
+        let serialized = serde_json::to_value(&full).unwrap();
+        let mut code_fields: Vec<&String> = serialized.as_object().unwrap().keys().collect();
+        let mut schema_fields: Vec<&String> =
+            device["properties"].as_object().unwrap().keys().collect();
+        code_fields.sort();
+        schema_fields.sort();
+        assert_eq!(schema_fields, code_fields, "device fields differ from the schema");
+
+        let strings = |v: &serde_json::Value| -> Vec<String> {
+            v.as_array()
+                .unwrap()
+                .iter()
+                .map(|x| x.as_str().unwrap().to_owned())
+                .collect()
+        };
+        let mut schema_protocols = strings(&device["properties"]["protocol"]["enum"]);
+        let mut code_protocols: Vec<String> = PROTOCOLS.iter().map(|p| p.to_string()).collect();
+        schema_protocols.sort();
+        code_protocols.sort();
+        assert_eq!(schema_protocols, code_protocols);
+
+        // Every kind the schema lists must parse.
+        for kind in strings(&device["properties"]["kind"]["enum"]) {
+            serde_json::from_value::<DeviceKind>(serde_json::json!(kind))
+                .unwrap_or_else(|e| panic!("schema kind `{kind}` is not a DeviceKind: {e}"));
+        }
+        assert_eq!(
+            device["properties"]["kind"]["enum"].as_array().unwrap().len(),
+            6,
+            "a new DeviceKind needs adding to the schema"
+        );
+        assert_eq!(
+            device["properties"]["heartbeat_ms"]["maximum"].as_u64(),
+            Some(MAX_HEARTBEAT_MS)
+        );
+    }
+
     #[test]
     fn garbage_is_a_parse_error() {
         assert!(matches!(

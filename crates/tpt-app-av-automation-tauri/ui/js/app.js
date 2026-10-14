@@ -426,7 +426,10 @@
     const rows = $("device-rows");
     rows.innerHTML = state.devices.map((d) => `
       <tr>
-        <td><span class="dot dot-${healthClass(d.health)}"></span>${esc(d.health)}</td>
+        <td><span class="dot dot-${healthClass(d.health)}"></span>${esc(d.health)}${
+          d.health === "unknown" && ["osc", "artnet", "sacn", "ump", "media"].includes(d.protocol)
+            ? `<div class="hint" title="Network devices count as online once they send traffic to a listener the service is bound to.">no traffic heard yet</div>`
+            : ""}</td>
         <td>${esc(d.name || d.id)}<div class="hint mono">${esc(d.id)}</div></td>
         <td>${esc(d.protocol)}</td>
         <td class="mono">${esc(d.address ?? "—")}</td>
