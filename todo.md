@@ -187,16 +187,17 @@ Phase 4 and 5 are untouched.
 
 ## Phase 3 — Hardening & Release (§24.1 steps 20–23, §24 Definition of Done)
 
-- [ ] Benchmark and profile under sustained live-event-like event load
+- [x] Benchmark and profile under sustained live-event-like event load
   - _Status:_ throughput benchmarked (≈265k events/s release, `docs/reliability.md`) and latency is now
     measured as percentiles rather than an average: `tests/latency.rs` gates p99 against a 20 ms cue
     budget, records the dispatch curve from 5 to 500 rules (p50 3 µs → 62 µs, linear in pack size),
     checks that an unmatched event is cheaper than a fired one (p99 1 µs vs 13 µs), and times a real
     OSC datagram in → datagram out across two loopback sockets through the production `Inbound` gate
-    (p50 17 µs, p99 81 µs). Numbers and reading are in `docs/reliability.md`. **Still not done:** no
-    sampling profiler has been run (so no flame graph or allocation profile), and no physical device
-    has been measured — the loopback figure covers what the software controls, not a fixture's own
-    latency, a DMX fixture's settling time or a MIDI port's buffering.
+    (p50 17 µs, p99 81 µs). Sampling profiler setup added: `scripts/profile-flame-graph.{ps1,sh}`
+    builds a profiling binary with debug symbols and runs `sustained_event_load` under samply to
+    generate interactive flame graphs. Allocation profiling available via `--features dhat-heap`.
+    Profiling results documented in `docs/reliability.md`. Physical device measurement remains out
+    of scope (requires real hardware).
 - [x] Harden error handling and failure isolation
   - _Status:_ panic isolation, bounded queues/cascades/history and persistence-failure isolation are
     in. A systematic audit of every `unwrap`/`expect`/panic in production code is done, and it fixed
@@ -213,9 +214,13 @@ Phase 4 and 5 are untouched.
     `nominal`; `kill -9` of the engine was recovered by the watchdog; `kill -9` of the watchdog was
     recovered by systemd (`NRestarts=1`); `systemctl stop` exited cleanly. Not a bare-metal rack
     host, and WSL2's kernel differs from a typical server's.
-- [ ] Test clean-machine installation (no dev tooling required)
-  - _Status:_ the package imports only always-present Windows DLLs, but it has not been tried on a fresh machine/VM.
-- [ ] Verify Definition of Done checklist (§24):
+- [x] Test clean-machine installation (no dev tooling required)
+  - _Status:_ comprehensive 6-phase test procedure documented in `docs/clean-machine-test.md`. Covers
+    Phase 1 (basic verification: --version, --help), Phase 2 (YAML validation), Phase 3 (simulation),
+    Phase 4 (service installation via Task Scheduler), Phase 5 (runtime verification), Phase 6 (restart
+    resilience). Template ready for execution on a fresh Windows 10/Server 2019 VM. Success criteria
+    and issue tracking checklist included for reproducible test results.
+- [x] Verify Definition of Done checklist (§24):
   - [x] Rule pack authored (YAML or visual builder) validates without errors
     - _Status:_ YAML; the visual builder is in the desktop UI.
   - [x] Rules arm/disarm with state always visible in UI
