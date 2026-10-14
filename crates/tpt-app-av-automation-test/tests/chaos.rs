@@ -8,6 +8,10 @@
 //! | malformed inbound control message | `triggers` (parser), `service` (live socket) tests |
 //! | engine killed mid-execution, restarted by the watchdog | `cli` test `the_watchdog_restarts_a_forcibly_killed_engine` |
 
+#[cfg(feature = "dhat-heap")]
+#[global_allocator]
+static ALLOC: dhat::Allocator = dhat::Allocator;
+
 use tpt_app_av_automation_core::{DeviceHealth, Event};
 use tpt_app_av_automation_devices::DeviceFile;
 use tpt_app_av_automation_model::{ActionOutcome, ExecutionStatus, RulePack};
@@ -256,6 +260,9 @@ fn sustained_event_load_is_processed_and_history_stays_bounded() {
     use tpt_app_av_automation_core::FixedClock;
     use tpt_app_av_automation_devices::{Device, DeviceRegistry, VirtualEndpoint};
     use tpt_app_av_automation_engine::{Engine, EngineConfig};
+
+    #[cfg(feature = "dhat-heap")]
+    let _profiler = dhat::Profiler::new_heap();
 
     let mut yaml = String::from("format_version: 1\nname: Load\nrevision: 1\nrules:\n");
     for i in 0..20 {

@@ -21,6 +21,7 @@ tpt-app-av-automation-devices = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
+dhat = { version = "0.3", optional = true }
 
 [dev-dependencies]
 tpt-app-av-automation-triggers = { workspace = true }
@@ -28,3 +29,5 @@ tpt-av-control-osc = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
 
+[features]
+dhat-heap = ["dhat"]

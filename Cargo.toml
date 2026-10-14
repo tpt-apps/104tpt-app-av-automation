@@ -77,3 +77,8 @@ midir = "0.9"
 lto = "thin"
 codegen-units = 1
 strip = true
+
+[profile.perf]
+inherits = "release"
+debug = true
+strip = false
