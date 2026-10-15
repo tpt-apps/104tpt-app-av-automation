@@ -56,7 +56,7 @@ pub use outcome::{
     ExecutionStatus,
 };
 pub use pack::{RulePack, YamlPackSource, FORMAT_VERSION, MAX_CHAIN_LENGTH};
-pub use rule::{Policy, Priority, Rule};
+pub use rule::{ConflictPolicy, Policy, Priority, Rule};
 pub use solar::{
     civil_from_days, solar_day, PolarError, SolarDay, SolarEvent, SolarSite, SUNRISE_ELEVATION_DEG,
 };

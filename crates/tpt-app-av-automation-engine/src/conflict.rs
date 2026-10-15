@@ -8,6 +8,7 @@
 use std::collections::BTreeMap;
 
 use tpt_app_av_automation_devices::Command;
+use tpt_app_av_automation_model::ConflictPolicy;
 
 /// Addressable parts of a device that a command writes.
 fn slots(command: &Command) -> Vec<String> {
@@ -61,19 +62,24 @@ pub(crate) struct Claims {
 }
 
 impl Claims {
-    /// Checks a write against existing claims and registers it when it does not conflict.
+    /// Checks a write against existing claims and registers it.
+    ///
+    /// Returns `Ok(None)` when nothing conflicts, and `Ok(Some(note))` when it conflicts but the
+    /// rule's policy is [`ConflictPolicy::LastWins`]: the write goes ahead and the note names the
+    /// rule it overrides. A conflict under [`ConflictPolicy::Reject`] is an `Err`.
     ///
     /// Live writes only conflict with other live writes — a disarmed rule never really sends, so it
     /// must not block an armed one. Simulated writes are checked against both, so a simulation
     /// shows the conflicts that arming the rule would cause.
-    pub(crate) fn claim(
+    pub(crate) fn claim_with_policy(
         &mut self,
         device: &str,
         rule: &str,
         priority: &str,
+        policy: ConflictPolicy,
         command: &Command,
         simulated: bool,
-    ) -> Result<(), String> {
+    ) -> Result<Option<String>, String> {
         let mine = slots(command);
         let conflicting = |claims: &BTreeMap<String, Vec<Claim>>| {
             claims.get(device).and_then(|list| {
@@ -93,12 +99,19 @@ impl Claims {
                 None
             }
         });
-        if let Some(owner) = hit {
-            return Err(format!(
-                "conflict on device `{device}`: slot already written by rule `{}` ({} priority)",
-                owner.rule, owner.priority
-            ));
-        }
+        let note = match hit {
+            Some(owner) if policy == ConflictPolicy::Reject => {
+                return Err(format!(
+                    "conflict on device `{device}`: slot already written by rule `{}` ({} priority)",
+                    owner.rule, owner.priority
+                ));
+            }
+            Some(owner) => Some(format!(
+                "overrides rule `{}` on device `{device}` (last wins)",
+                owner.rule
+            )),
+            None => None,
+        };
         let map = if simulated {
             &mut self.simulated
         } else {
@@ -110,7 +123,28 @@ impl Claims {
             command: command.clone(),
             slots: mine,
         });
-        Ok(())
+        Ok(note)
+    }
+
+    /// Claim under the default policy, which rejects conflicts.
+    #[cfg(test)]
+    fn claim(
+        &mut self,
+        device: &str,
+        rule: &str,
+        priority: &str,
+        command: &Command,
+        simulated: bool,
+    ) -> Result<(), String> {
+        self.claim_with_policy(
+            device,
+            rule,
+            priority,
+            ConflictPolicy::Reject,
+            command,
+            simulated,
+        )
+        .map(|_| ())
     }
 }
 
@@ -118,6 +152,35 @@ impl Claims {
 mod tests {
     use super::*;
     use tpt_app_av_automation_model::DmxTransport;
+
+    #[test]
+    fn last_wins_lets_the_write_through_and_names_the_rule_it_overrode() {
+        let mut c = Claims::default();
+        c.claim("d", "a", "critical", &osc("/x", 1.0), false)
+            .unwrap();
+        let note = c
+            .claim_with_policy(
+                "d",
+                "b",
+                "normal",
+                ConflictPolicy::LastWins,
+                &osc("/x", 2.0),
+                false,
+            )
+            .unwrap();
+        assert!(note.unwrap().contains("overrides rule `a`"));
+        // A rejecting rule still loses against the now-overwritten slot.
+        assert!(c
+            .claim_with_policy(
+                "d",
+                "c",
+                "normal",
+                ConflictPolicy::Reject,
+                &osc("/x", 3.0),
+                false
+            )
+            .is_err());
+    }
 
     fn osc(address: &str, v: f64) -> Command {
         Command::Osc {

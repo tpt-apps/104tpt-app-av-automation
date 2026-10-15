@@ -40,6 +40,8 @@ enum Command {
     Init(InitArgs),
     /// List the devices in a device file, check them, and optionally test that each can be opened.
     Devices(DevicesArgs),
+    /// Import a device inventory (for example one exported by TPT AV Commissioning) into a device file.
+    ImportDevices(ImportDevicesArgs),
     /// Check a rule pack (and optionally its device file and service config) without running it.
     Validate(ValidateArgs),
     /// Evaluate events against a rule pack and show what would happen. Sends nothing, ever.
@@ -90,6 +92,20 @@ pub struct DevicesArgs {
     /// Output format (`trace` behaves like `json`).
     #[arg(long, value_enum, default_value_t = Format::Text)]
     pub format: Format,
+}
+
+#[derive(Args, Debug)]
+pub struct ImportDevicesArgs {
+    /// Inventory to import (YAML, the same format as a device file).
+    #[arg(long)]
+    pub from: PathBuf,
+    /// Device file to import into. Created when it does not exist; the original is kept once as
+    /// `<file>.bak`.
+    #[arg(long)]
+    pub into: PathBuf,
+    /// Replace devices that already exist in the target with the same id, instead of refusing.
+    #[arg(long)]
+    pub replace: bool,
 }
 
 #[derive(Args, Debug)]
@@ -210,6 +226,7 @@ fn main() -> ProcessExit {
     let result = match cli.command {
         Command::Init(args) => init::init(&args),
         Command::Devices(args) => commands::devices(&args),
+        Command::ImportDevices(args) => commands::import_devices(&args),
         Command::Validate(args) => commands::validate(&args),
         Command::Simulate(args) => commands::simulate(&args),
         Command::Run(args) => commands::run(&args),

@@ -9,6 +9,20 @@ use crate::action::{ActionStep, FailurePolicy};
 use crate::condition::Condition;
 use crate::trigger::Trigger;
 
+/// What a rule does when its write to an endpoint slot conflicts with an earlier rule's write
+/// during the same dispatch (spec §10.1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ConflictPolicy {
+    /// Skip the conflicting step and record the conflict. The default: the earlier rule keeps the
+    /// slot.
+    #[default]
+    Reject,
+    /// Perform the write anyway, so this rule's value is the one the device ends with. The step
+    /// records which rule it overrode.
+    LastWins,
+}
+
 /// Coarse execution priority used for deterministic conflict resolution (spec §10.1).
 ///
 /// Higher priority wins. Conflicts between equal-priority rules are resolved by rule id so the
@@ -91,6 +105,9 @@ pub struct Rule {
     /// Conflict-resolution priority.
     #[serde(default)]
     pub priority: Priority,
+    /// What happens when this rule's write conflicts with an earlier rule's write.
+    #[serde(default, skip_serializing_if = "is_default_conflict")]
+    pub conflict: ConflictPolicy,
     /// Whether the rule may send real actions.
     ///
     /// Defaults to `false`: new or edited rules are simulation-only until an operator explicitly
@@ -109,6 +126,10 @@ fn default_rule_version() -> u32 {
     1
 }
 
+fn is_default_conflict(policy: &ConflictPolicy) -> bool {
+    *policy == ConflictPolicy::Reject
+}
+
 impl Rule {
     /// Builds a rule with defaults.
     pub fn new(id: impl Into<RuleId>, name: impl Into<String>, trigger: Trigger) -> Self {
@@ -122,6 +143,7 @@ impl Rule {
             actions: Vec::new(),
             policy: Policy::default(),
             priority: Priority::Normal,
+            conflict: ConflictPolicy::Reject,
             armed: false,
             tags: Vec::new(),
             reentrant: false,

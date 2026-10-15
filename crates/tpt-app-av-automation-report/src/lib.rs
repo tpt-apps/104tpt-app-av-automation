@@ -135,6 +135,21 @@ pub fn describe_event(event: &Event) -> String {
             outcome,
             ..
         } => format!("{source} job {job_id} {outcome}"),
+        Event::Signal {
+            source,
+            channel,
+            signal,
+            value,
+        } => {
+            let channel = channel
+                .as_deref()
+                .map(|c| format!("/{c}"))
+                .unwrap_or_default();
+            match value {
+                Some(value) => format!("{source}{channel} signal {} = {value}", signal.as_str()),
+                None => format!("{source}{channel} signal {}", signal.as_str()),
+            }
+        }
     }
 }
 

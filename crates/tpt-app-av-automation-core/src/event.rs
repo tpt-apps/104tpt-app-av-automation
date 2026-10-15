@@ -208,6 +208,73 @@ pub enum Event {
         /// Optional job category, e.g. `transcode` or `qc`.
         job_kind: Option<String>,
     },
+    /// A producer measured something about a media signal (spec §7.4). Producers measure; the
+    /// engine only compares.
+    Signal {
+        /// Producer name, e.g. `audio-desk` or `playout`.
+        source: String,
+        /// Channel or output the measurement belongs to, if the producer has more than one.
+        channel: Option<String>,
+        /// What was measured.
+        signal: SignalKind,
+        /// The measured value for kinds that carry one (`level` in dBFS, `drift` in ms).
+        value: Option<f64>,
+    },
+}
+
+/// A kind of media-signal observation a producer can report (spec §7.4).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SignalKind {
+    /// The signal disappeared.
+    Lost,
+    /// The signal came back.
+    Restored,
+    /// Audio is silent.
+    Silence,
+    /// Audio is clipping.
+    Clipping,
+    /// Video is black.
+    Black,
+    /// Video is frozen.
+    Freeze,
+    /// Audio level in dBFS; carries a value.
+    Level,
+    /// Audio/video drift in milliseconds; carries a value.
+    Drift,
+}
+
+impl SignalKind {
+    /// Every kind, in declaration order.
+    pub const ALL: [SignalKind; 8] = [
+        SignalKind::Lost,
+        SignalKind::Restored,
+        SignalKind::Silence,
+        SignalKind::Clipping,
+        SignalKind::Black,
+        SignalKind::Freeze,
+        SignalKind::Level,
+        SignalKind::Drift,
+    ];
+
+    /// The name used in YAML, the API and the CLI.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            SignalKind::Lost => "lost",
+            SignalKind::Restored => "restored",
+            SignalKind::Silence => "silence",
+            SignalKind::Clipping => "clipping",
+            SignalKind::Black => "black",
+            SignalKind::Freeze => "freeze",
+            SignalKind::Level => "level",
+            SignalKind::Drift => "drift",
+        }
+    }
+
+    /// Whether observations of this kind carry a numeric value.
+    pub fn carries_value(self) -> bool {
+        matches!(self, SignalKind::Level | SignalKind::Drift)
+    }
 }
 
 /// How a background job ended.
@@ -244,6 +311,7 @@ impl Event {
             Event::Api { .. } => "api",
             Event::FileArrived { .. } => "file_arrived",
             Event::Job { .. } => "job",
+            Event::Signal { .. } => "signal",
         }
     }
 }
@@ -325,6 +393,18 @@ mod tests {
                 job_id: "j-2".into(),
                 outcome: JobOutcome::Completed,
                 job_kind: None,
+            },
+            Event::Signal {
+                source: "audio-desk".into(),
+                channel: Some("main-L".into()),
+                signal: SignalKind::Level,
+                value: Some(-3.5),
+            },
+            Event::Signal {
+                source: "playout".into(),
+                channel: None,
+                signal: SignalKind::Black,
+                value: None,
             },
         ];
         for event in events {

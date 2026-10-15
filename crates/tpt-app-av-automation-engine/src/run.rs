@@ -332,16 +332,21 @@ impl Engine {
         };
         let label = spec.type_label();
 
+        let mut override_note = None;
         if let (Some(command), Some(target)) = (Command::from_spec(&spec), step.target()) {
-            if let Err(reason) = cx.claims.claim(
+            match cx.claims.claim_with_policy(
                 target,
                 rule.id.as_str(),
                 &rule.priority.to_string(),
+                rule.conflict,
                 &command,
                 simulated,
             ) {
-                tracing::warn!(rule = %rule.id, "{reason}");
-                return make(label, ActionOutcome::Skipped { reason }, None, 0);
+                Ok(note) => override_note = note,
+                Err(reason) => {
+                    tracing::warn!(rule = %rule.id, "{reason}");
+                    return make(label, ActionOutcome::Skipped { reason }, None, 0);
+                }
             }
         }
 
@@ -392,6 +397,11 @@ impl Engine {
             }
         };
 
+        let detail = match (override_note, detail) {
+            (Some(note), Some(detail)) => Some(format!("{note}; {detail}")),
+            (Some(note), None) => Some(note),
+            (None, detail) => detail,
+        };
         let finished = self.clock.now();
         make(label, outcome, detail, finished.millis_since(started))
     }

@@ -21,7 +21,10 @@ use tpt_app_av_automation_service::{
 use tpt_app_av_automation_triggers::LocalClock;
 
 use crate::event_spec::{self, ScheduleAt};
-use crate::{DevicesArgs, Format, HistoryArgs, RunArgs, SimulateArgs, ValidateArgs, WatchdogArgs};
+use crate::{
+    DevicesArgs, Format, HistoryArgs, ImportDevicesArgs, RunArgs, SimulateArgs, ValidateArgs,
+    WatchdogArgs,
+};
 
 /// Monday 2024-01-01 00:00 UTC, the anchor for a simulated clock.
 const MONDAY_EPOCH_MS: u64 = 1_704_067_200_000;
@@ -121,6 +124,88 @@ pub fn devices(args: &DevicesArgs) -> Result<ExitCode> {
 }
 
 // --- validate -----------------------------------------------------------------------------------
+
+/// Merges a device inventory (for example a TPT AV Commissioning export) into a device file.
+///
+/// Nothing is written unless the inventory is valid and the merged file is valid. A device whose id
+/// already exists is refused unless `--replace` is given, so an import never silently changes a
+/// device the show already uses.
+pub fn import_devices(args: &ImportDevicesArgs) -> Result<ExitCode> {
+    let inventory = DeviceFile::from_path(&args.from)?;
+    let problems: Vec<Diagnostic> = inventory
+        .validate()
+        .into_iter()
+        .filter(|d| d.severity == Severity::Error)
+        .collect();
+    if !problems.is_empty() {
+        print_diagnostics(&problems);
+        eprintln!(
+            "nothing imported: the inventory has {} error(s)",
+            problems.len()
+        );
+        return Ok(ExitCode::ConfigurationError);
+    }
+
+    let target_exists = args.into.exists();
+    let mut target = if target_exists {
+        DeviceFile::from_path(&args.into)?
+    } else {
+        DeviceFile::default()
+    };
+    let existing: Vec<String> = target.devices.iter().map(|d| d.id.clone()).collect();
+    let clashes: Vec<&str> = inventory
+        .devices
+        .iter()
+        .filter(|d| existing.contains(&d.id))
+        .map(|d| d.id.as_str())
+        .collect();
+    if !clashes.is_empty() && !args.replace {
+        eprintln!(
+            "nothing imported: these devices already exist: {}; pass --replace to overwrite them",
+            clashes.join(", ")
+        );
+        return Ok(ExitCode::ConfigurationError);
+    }
+
+    let (mut added, mut replaced) = (0usize, 0usize);
+    for device in &inventory.devices {
+        match target.devices.iter_mut().find(|d| d.id == device.id) {
+            Some(slot) => {
+                *slot = device.clone();
+                replaced += 1;
+            }
+            None => {
+                target.devices.push(device.clone());
+                added += 1;
+            }
+        }
+    }
+    let merged_errors = target
+        .validate()
+        .iter()
+        .filter(|d| d.severity == Severity::Error)
+        .count();
+    if merged_errors > 0 {
+        eprintln!("nothing imported: the merged device file would have {merged_errors} error(s)");
+        return Ok(ExitCode::ConfigurationError);
+    }
+
+    if target_exists {
+        // Keep the first pre-import copy, as the desktop editor does.
+        let backup = std::path::PathBuf::from(format!("{}.bak", args.into.display()));
+        if !backup.exists() {
+            std::fs::copy(&args.into, &backup).map_err(|e| {
+                Error::Io(format!("could not back up {}: {e}", args.into.display()))
+            })?;
+        }
+    }
+    target.write_to_path(&args.into)?;
+    println!(
+        "imported {added} new and replaced {replaced} device(s) into {}",
+        args.into.display()
+    );
+    Ok(ExitCode::Success)
+}
 
 pub fn validate(args: &ValidateArgs) -> Result<ExitCode> {
     let mut diagnostics: Vec<Diagnostic> = Vec::new();

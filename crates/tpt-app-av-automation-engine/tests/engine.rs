@@ -430,6 +430,27 @@ fn conflicting_rules_resolve_by_priority_and_are_recorded() {
 }
 
 #[test]
+fn a_last_wins_rule_overrides_the_slot_and_says_so() {
+    let yaml = CONFLICT.replace(
+        "      - { id: set, type: control.osc, device: proj, address: /input, args: [1] }",
+        "      - { id: set, type: control.osc, device: proj, address: /input, args: [1] }\n    conflict: last_wins",
+    );
+    let mut h = harness(&yaml, &["proj"]);
+    let records = h.engine.handle_event(osc("/go", &[]));
+    let low = records
+        .iter()
+        .find(|r| r.rule_id.as_str() == "zz-low")
+        .unwrap();
+    assert!(outcomes(low)[0].is_success(), "last-wins rule should write");
+    let detail = low.action_results[0].detail.clone().unwrap_or_default();
+    assert!(detail.contains("overrides rule `aa-critical`"), "{detail}");
+    assert!(h
+        .sent("proj")
+        .iter()
+        .any(|c| matches!(c, Command::Osc { args, .. } if args == &vec![1.0])));
+}
+
+#[test]
 fn equal_priority_conflicts_are_resolved_deterministically_by_rule_id() {
     let yaml = CONFLICT
         .replace("priority: low", "priority: normal")

@@ -440,6 +440,53 @@ fn validate_trigger(
                 }
             }
         }
+        TriggerSpec::Signal {
+            source,
+            channel,
+            signal,
+            comparison,
+            value,
+        } => {
+            for (field, text) in [("source", source), ("channel", channel)] {
+                if let Some(text) = text {
+                    if text.trim().is_empty()
+                        || !text
+                            .chars()
+                            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.'))
+                    {
+                        diagnostics.push(Diagnostic::error(
+                            format!("{loc}.{field}"),
+                            format!("{field} may contain only letters, digits, `_`, `-` and `.`"),
+                        ));
+                    }
+                }
+            }
+            if signal.carries_value() {
+                if comparison.is_none() || value.is_none() {
+                    diagnostics.push(Diagnostic::error(
+                        loc,
+                        format!(
+                            "signal `{}` needs a comparison and a value to test",
+                            signal.as_str()
+                        ),
+                    ));
+                }
+                if value.is_some_and(|v| !v.is_finite()) {
+                    diagnostics.push(Diagnostic::error(
+                        format!("{loc}.value"),
+                        "the threshold must be a finite number",
+                    ));
+                }
+            } else if comparison.is_some() || value.is_some() {
+                diagnostics.push(Diagnostic::error(
+                    loc,
+                    format!(
+                        "signal `{}` is a yes/no observation and takes no comparison or value",
+                        signal.as_str()
+                    ),
+                ));
+            }
+        }
         TriggerSpec::Manual => {}
     }
 }

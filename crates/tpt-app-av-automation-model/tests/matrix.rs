@@ -141,7 +141,7 @@ fn assert_parse_error(yaml: &str) {
 ///
 /// This list is the matrix's spine: a form missing from it cannot be silently untested, and
 /// `every_trigger_type_is_exercised` fails if a new form is added without a matrix entry.
-const TRIGGER_TYPES: [&str; 11] = [
+const TRIGGER_TYPES: [&str; 12] = [
     "schedule",
     "osc",
     "midi",
@@ -153,11 +153,12 @@ const TRIGGER_TYPES: [&str; 11] = [
     "api",
     "file_arrived",
     "job",
+    "signal",
 ];
 
 #[test]
 fn every_trigger_type_is_accepted_by_the_parser() {
-    let valid: [(&str, &str); 11] = [
+    let valid: [(&str, &str); 12] = [
         ("schedule", "    type: schedule\n    at: \"18:55\"\n"),
         ("osc", "    type: osc\n    address: /stage/lights\n"),
         (
@@ -187,6 +188,10 @@ fn every_trigger_type_is_accepted_by_the_parser() {
             "    type: file_arrived\n    folder: /watch/in\n    extensions: [mov, mxf]\n",
         ),
         ("job", "    type: job\n    source: qc\n    outcome: failed\n"),
+        (
+            "signal",
+            "    type: signal\n    source: audio-desk\n    signal: level\n    comparison: lt\n    value: -20\n",
+        ),
     ];
     assert_eq!(
         valid.len(),
@@ -455,6 +460,36 @@ fn file_arrived_trigger_boundaries() {
         &with_trigger("    type: file_arrived\n    folder: /in\n    extensions: [\"\"]\n"),
         "without a leading dot",
     );
+}
+
+#[test]
+fn signal_trigger_boundaries() {
+    // Yes/no observations take no comparison or threshold.
+    assert_valid(&with_trigger("    type: signal\n    signal: silence\n"));
+    assert_valid(&with_trigger(
+        "    type: signal\n    source: playout\n    signal: black\n",
+    ));
+    assert_rejected_mentioning(
+        &with_trigger("    type: signal\n    signal: silence\n    value: -40\n"),
+        "takes no comparison or value",
+    );
+    // Level and drift need a comparison and a threshold.
+    assert_rejected_mentioning(
+        &with_trigger("    type: signal\n    signal: level\n"),
+        "needs a comparison and a value",
+    );
+    assert_rejected_mentioning(
+        &with_trigger("    type: signal\n    signal: drift\n    comparison: gt\n"),
+        "needs a comparison and a value",
+    );
+    assert_valid(&with_trigger(
+        "    type: signal\n    signal: drift\n    comparison: gt\n    value: 80\n",
+    ));
+    assert_rejected_mentioning(
+        &with_trigger("    type: signal\n    source: \"bad name\"\n    signal: silence\n"),
+        "source may contain only",
+    );
+    assert_parse_error(&with_trigger("    type: signal\n    signal: wobble\n"));
 }
 
 #[test]

@@ -13,11 +13,12 @@
 //! | `api:name` | a local API call |
 //! | `file:/watch/in/clip.mov` | a file arriving in its parent folder |
 //! | `job:qc:failed` or `job:qc:failed:transcode` | a background job ending |
+//! | `signal:audio-desk:silence` or `signal:audio-desk:level=-3.5` | a producer's signal observation |
 
 use std::collections::HashMap;
 
 use tpt_app_av_automation_core::{
-    DeviceHealth, DmxLevel, Error, Event, JobOutcome, MidiLevel, Result,
+    DeviceHealth, DmxLevel, Error, Event, JobOutcome, MidiLevel, Result, SignalKind,
 };
 use tpt_app_av_automation_model::{LocalTime, MidiMessageKind, RulePack, TriggerSpec, Weekday};
 
@@ -25,7 +26,7 @@ use tpt_app_av_automation_model::{LocalTime, MidiMessageKind, RulePack, TriggerS
 pub const USAGE: &str = "expected one of: schedule:HH:MM[@day], osc:/address[=v1,v2], \
 midi:kind:channel:number[:value], dmx:universe:channel=value, device:id:state, \
 heartbeat-missed:id:ms, param:id:name=value, manual[:rule], api:name, \
-file:path, job:source:completed|failed[:kind]";
+file:path, job:source:completed|failed[:kind], signal:source:kind[=value]";
 
 fn bad(spec: &str, why: &str) -> Error {
     Error::Parse(format!("invalid event `{spec}`: {why}; {USAGE}"))
@@ -246,6 +247,35 @@ pub fn parse_event(spec: &str, pack: &RulePack) -> Result<Vec<Event>> {
                 job_id: "simulated".to_owned(),
                 outcome,
                 job_kind,
+            }])
+        }
+        "signal" => {
+            let (head, value) = match rest.split_once('=') {
+                Some((head, value)) => (head, Some(number::<f64>(spec, value, "number")?)),
+                None => (rest, None),
+            };
+            let (source, kind) = head
+                .split_once(':')
+                .ok_or_else(|| bad(spec, "expected signal:source:kind[=value]"))?;
+            let signal = SignalKind::ALL
+                .into_iter()
+                .find(|k| k.as_str() == kind)
+                .ok_or_else(|| bad(spec, &format!("unknown signal kind `{kind}`")))?;
+            match (signal.carries_value(), value.is_some()) {
+                (true, false) => {
+                    return Err(bad(
+                        spec,
+                        &format!("signal `{kind}` needs a value, e.g. `=-3.5`"),
+                    ))
+                }
+                (false, true) => return Err(bad(spec, &format!("signal `{kind}` takes no value"))),
+                _ => {}
+            }
+            Ok(vec![Event::Signal {
+                source: source.to_owned(),
+                channel: None,
+                signal,
+                value,
             }])
         }
         "manual" => Ok(vec![Event::Manual {

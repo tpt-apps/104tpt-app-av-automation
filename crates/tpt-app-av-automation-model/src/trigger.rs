@@ -4,7 +4,7 @@ use std::fmt;
 use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
-use tpt_app_av_automation_core::{DeviceHealth, Event, JobOutcome, Result};
+use tpt_app_av_automation_core::{DeviceHealth, Event, JobOutcome, Result, SignalKind};
 
 use crate::condition::Comparison;
 use crate::cron::CronSchedule;
@@ -684,6 +684,25 @@ pub enum TriggerSpec {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         job_kind: Option<String>,
     },
+    /// A producer-reported media-signal observation (spec §7.4).
+    #[serde(rename = "signal")]
+    Signal {
+        /// Producer name. `None` matches any producer.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        source: Option<String>,
+        /// Channel or output. `None` matches any channel.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        channel: Option<String>,
+        /// The observation to match.
+        signal: SignalKind,
+        /// Comparison applied to the measured value. Required for `level` and `drift`, and not
+        /// allowed for the other kinds.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        comparison: Option<Comparison>,
+        /// Threshold for `comparison`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        value: Option<f64>,
+    },
 }
 
 impl TriggerSpec {
@@ -716,6 +735,9 @@ impl TriggerSpec {
             TriggerSpec::Api { .. } => key == "name",
             TriggerSpec::FileArrived { .. } => ["folder", "extensions"].contains(&key),
             TriggerSpec::Job { .. } => ["source", "outcome", "job_kind"].contains(&key),
+            TriggerSpec::Signal { .. } => {
+                ["source", "channel", "signal", "comparison", "value"].contains(&key)
+            }
         }
     }
 }
@@ -834,6 +856,7 @@ impl Trigger {
             TriggerSpec::Api { .. } => "api",
             TriggerSpec::FileArrived { .. } => "file_arrived",
             TriggerSpec::Job { .. } => "job",
+            TriggerSpec::Signal { .. } => "signal",
         }
     }
 
@@ -948,6 +971,33 @@ impl Trigger {
                 device == observed
                     && parameter == observed_param
                     && comparison.evaluate_f64(*reported, *value)
+            }
+            (
+                TriggerSpec::Signal {
+                    source,
+                    channel,
+                    signal,
+                    comparison,
+                    value,
+                },
+                Event::Signal {
+                    source: observed_source,
+                    channel: observed_channel,
+                    signal: observed_signal,
+                    value: observed_value,
+                },
+            ) => {
+                source.as_ref().is_none_or(|s| s == observed_source)
+                    && channel
+                        .as_ref()
+                        .is_none_or(|c| observed_channel.as_deref() == Some(c.as_str()))
+                    && signal == observed_signal
+                    && match (comparison, value) {
+                        (Some(cmp), Some(threshold)) => {
+                            observed_value.is_some_and(|v| cmp.evaluate_f64(v, *threshold))
+                        }
+                        _ => true,
+                    }
             }
             (TriggerSpec::Manual, Event::Manual { rule: None }) => true,
             (TriggerSpec::Manual, Event::Manual { rule: Some(_) }) => true,
