@@ -46,6 +46,19 @@ in `exec_allow`. Then: no shell (argv vector, so metacharacters are inert); clea
 closed stdin; discarded stdout/stderr; killed at the wall-clock bound; never elevated. A program
 not on the allow-list, or a non-zero exit, is a `failed` step.
 
+## Outbound webhooks (spec §8.3)
+
+`notify.webhook` POSTs a JSON notification to an `http://` URL. It is **disabled by default** and
+only reaches URLs under a prefix listed in `webhook_allow` in `service.yaml`. See
+[integrations](integrations.md#outbound-webhooks-spec-83) for the sandbox rules.
+
+```yaml
+- id: tell-control
+  type: notify.webhook
+  url: http://192.168.1.50:8080/hook
+  message: Main display lost signal
+```
+
 ## Media
 
 `media.*` actions are routed to the endpoint bound to `device`, exactly like control actions, and

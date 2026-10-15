@@ -32,11 +32,43 @@ Raw datagrams never reach rule matching. They pass through `triggers::Inbound`:
 
 OSC arguments that are not numeric (strings, blobs) are skipped when building the event.
 
+## Media-pipeline triggers (spec §7.5)
+
+`file_arrived` fires when a file appears in a watched folder. The service polls each folder named by
+such a trigger every `watch_interval_ms` (default 1000) with plain file-system reads, so it needs no
+platform notification backend. Two rules keep it honest:
+
+* the first scan of a folder only records what is already there, so starting the service never
+  fires for old files;
+* a file is reported once its size is the same on two consecutive scans, so one still being copied
+  is not handed to the rule half-written.
+
+```yaml
+trigger: { type: file_arrived, folder: '/media/ingest', extensions: [mov, mxf] }
+```
+
+`extensions` is optional, case-insensitive and written without a dot. Files that arrive while the
+service is stopped are not picked up later. This polls with `std::fs`; it is **not** the
+`tpt-av-asset` watcher.
+
+`job` fires when a producer reports that a background job finished. Producers (TPT Media QC,
+TPT Media Forensics, a transcode pipeline) post to `POST /events/job` on the local API (see
+[integrations](integrations.md#local-api-spec-14)). The trigger matches on producer, outcome and an
+optional category:
+
+```yaml
+trigger: { type: job, source: qc, outcome: failed, job_kind: transcode }
+```
+
+`source` and `outcome` are optional; leaving `outcome` out matches both. `simulate` accepts
+`file:/path/clip.mov` and `job:qc:failed[:kind]` for testing.
+
 ## Not yet implemented
 
-Control-surface button/fader events, and the
-Phase 2 signal-condition and media-pipeline triggers (`signal_lost`, black/freeze frame, audio
-silence/clipping, A/V drift, watch folders, job events, sibling-app events).
+Control-surface button/fader events, the Phase 2 signal-condition triggers (`signal_lost`,
+black/freeze frame, audio silence/clipping) and A/V drift. The media-pipeline triggers are **not**
+wired to `tpt-av-asset` yet: job results arrive from producers over the API, and watch folders are
+polled directly.
 
 MIDI 2.0 arrives as raw Universal MIDI Packets on a `ump` UDP listener rather than from a local
 `midi` port, because no desktop platform currently exposes native MIDI 2.0 ports to `midir`. The

@@ -115,9 +115,28 @@ least 16 characters is required. Every request needs `Authorization: Bearer <tok
 | GET | `/incidents` | the persistent incident log written by `log.incident`, newest first (`limit` ≤ 1000) |
 | POST | `/rules/:id/arm` · `/disarm` · `/run` | `run` returns machine results |
 | POST | `/executions/:id/cancel` | cancel a running chain |
+| POST | `/events/job` | a background job finished: `{"source", "job_id", "outcome", "job_kind"?}` where outcome is `completed` or `failed`; `202` when queued, `400` on a malformed report |
 | GET | `/events` | WebSocket: one JSON execution record per message |
 
 ## Sibling TPT apps (spec §5.2)
 
-QC/Forensics events and Commissioning inventory import are Phase 2 (`todo.md`). Nothing in the
-engine depends on a sibling app being installed.
+A sibling app reports results through `POST /events/job` (above); the engine has no compile-time
+dependency on it. The request contract is defined here, but it has **not** been tested against
+TPT Media QC, TPT Media Forensics or TPT AV Commissioning, whose own event formats are not in this
+repository. Commissioning inventory import is still open (`todo.md`).
+
+## Outbound webhooks (spec §8.3)
+
+`notify.webhook` actions are **disabled by default**. Enable them by listing the URL prefixes the
+service may call in `service.yaml`:
+
+```yaml
+webhook_allow: ["http://192.168.1.50:8080/"]
+```
+
+A prefix admits the exact URL and URLs that continue it at a `/`, `?` or `#` boundary, so
+`http://host:80` does not admit `http://host:8080`. Only `http://` is supported: a TLS client is
+not in the dependency tree, so an `https://` target is refused with a reason rather than sent in
+the clear. Each delivery is one `POST` with a JSON body
+`{"rule", "rule_name", "execution", "message"}`, bounded by the chain's timeout (default 5 s).
+Redirects are not followed, and any non-2xx status is a `failed` step. Tested over loopback sockets.

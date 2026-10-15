@@ -14,7 +14,7 @@ Source of truth: `spec.txt`. Section references (`§`) point back to it.
 
 `[x]` means implemented **and** covered by automated tests that pass. `[ ]` items carry a
 `Status` line saying exactly what exists and what is missing; nothing partial is ticked.
-Phase 4 and 5 are untouched.
+Phase 4 and 5 are only partly started; each open item's `Status` line says what exists.
 
 ---
 
@@ -253,8 +253,18 @@ Phase 4 and 5 are untouched.
 ## Phase 4 — Post-MVP Phase 2 (§20 Phase 2, §22 Studio tier)
 
 - [ ] Media-pipeline triggers/actions: watch-folder ingest, job completed/failed (via `tpt-av-asset`) (§7.5, §20)
+  - _Status:_ partial. `file_arrived` (watch folders, polled with `std::fs`, stable-size check) and
+    `job` (completed/failed reported to `POST /events/job`) triggers are implemented and tested over
+    the API and sockets. Not done: binding to `tpt-av-asset`. Its `Cargo.toml` pulls `tpt-kinetix`
+    and `tpt-cadence` from GitHub at pinned revisions, so it was not added as a dependency here. Job
+    *actions* (start a transcode/proxy job) are also not implemented.
 - [ ] Sibling-app event integration: TPT Media QC "job failed" event (§5.2, §7.5)
+  - _Status:_ partial. QC can report through the generic `job` event (`source: qc`, `outcome: failed`).
+    The request contract is documented in `docs/integrations.md`, but QC's own event format is not in
+    this repository and the integration has not been tested against QC.
 - [ ] Sibling-app event integration: TPT Media Forensics "finding recorded" event (§5.2, §7.5)
+  - _Status:_ partial, same as QC. There is no finding-specific event; Forensics would report via
+    `job` events, which do not carry finding details. Untested against Forensics.
 - [ ] Full visual rule-builder canvas (beyond YAML-backed forms) (§20)
 - [ ] Richer conflict-resolution and priority tooling (§20)
 - [ ] Audio/video signal-condition triggers: signal lost, black frame, freeze frame (`tpt-visual`, `tpt-kinetix`) (§7.4, §20)
@@ -269,5 +279,8 @@ Phase 4 and 5 are untouched.
 - [ ] Plugin SDK for third-party device drivers and custom actions (§20)
 - [ ] Redundant/clustered engine execution for mission-critical installations (§20)
 - [ ] Opt-in outbound webhook/email notification connectors (§8.3, §20)
+  - _Status:_ partial. `notify.webhook` (opt-in, `webhook_allow` prefixes, JSON POST, `http://` only) is
+    implemented and tested over loopback. Not done: email, and `https://` (needs a TLS client, which is
+    a dependency decision for the maintainers).
 - [ ] Facility/Enterprise packaging tier: multi-site deployment, plugin SDK, redundant execution, central rule-pack distribution, commercial support (§22)
 - [ ] Re-evaluate cloud infrastructure only if customers demonstrate real need (§20)
