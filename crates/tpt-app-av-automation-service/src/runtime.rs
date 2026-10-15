@@ -1,7 +1,7 @@
 //! The service runtime: one thread owns the engine; listeners, the API and the operator talk to it
 //! through a bounded message queue (spec §3.6, §11).
 
-use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::net::{IpAddr, SocketAddr, ToSocketAddrs, UdpSocket};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 use serde::Serialize;
 use serde_json::{json, Value};
 use tpt_app_av_automation_actions::{
-    Actions, ExecPolicy, Incident, IncidentSink, ThreadSleeper, TracingSink,
+    Actions, ExecPolicy, Incident, IncidentSink, ThreadSleeper, TracingSink, WebhookPolicy,
 };
 use tpt_app_av_automation_core::{
     slugify_rule_id, ActionId, Clock, ConditionId, DeviceHealth, Diagnostic, Error, Event, Result,
@@ -24,12 +24,13 @@ use tpt_app_av_automation_devices::{
     build_endpoint, DeviceConfig, DeviceFile, DeviceRegistry, Endpoint,
 };
 use tpt_app_av_automation_engine::{CancelHandle, Engine, EngineConfig, Mode};
-use tpt_app_av_automation_model::{has_errors, ExecutionRecord, Rule, RulePack};
+use tpt_app_av_automation_model::{has_errors, ExecutionRecord, Rule, RulePack, TriggerSpec};
 use tpt_app_av_automation_report::machine_result;
 use tpt_app_av_automation_triggers::{Inbound, InboundLimits, LocalClock};
 
 use crate::config::{ListenerConfig, ServiceConfig};
 use crate::store::Store;
+use crate::watch::FolderWatch;
 
 const RECENT_LIMIT: usize = 200;
 const QUEUE_DEPTH: usize = 8192;
@@ -428,6 +429,8 @@ pub struct Service {
     pack_path: Option<PathBuf>,
     /// Whether the original pack file was already copied to `.bak` this session.
     pack_backed_up: bool,
+    /// What each watched folder contained on its last scan (spec §7.5).
+    watch: FolderWatch,
 }
 
 impl Service {
@@ -461,6 +464,11 @@ impl Service {
         let mut actions = Actions::new(sink, incidents, Arc::new(ThreadSleeper));
         if !config.exec_allow.is_empty() {
             actions.set_exec_policy(ExecPolicy::allowing(config.exec_allow.iter().cloned()));
+        }
+        if !config.webhook_allow.is_empty() {
+            actions.set_webhook_policy(WebhookPolicy::allowing(
+                config.webhook_allow.iter().cloned(),
+            ));
         }
 
         let mut registry = DeviceRegistry::new();
@@ -548,6 +556,7 @@ impl Service {
             devices_backed_up: false,
             pack_path: None,
             pack_backed_up: false,
+            watch: FolderWatch::default(),
         };
         service.refresh_snapshot();
         Ok(service)
@@ -609,9 +618,11 @@ impl Service {
     fn main_loop(&mut self) {
         let tick = Duration::from_millis(self.config.tick_ms.max(1));
         let ping = Duration::from_millis(self.config.heartbeat_interval_ms.max(1));
+        let watch_every = Duration::from_millis(self.config.watch_interval_ms.max(1));
         let wait = tick.min(Duration::from_millis(50));
         let mut last_tick = Instant::now();
         let mut last_ping = Instant::now() - ping;
+        let mut last_watch = Instant::now() - watch_every;
         let mut last_state_save = Instant::now();
         let mut dirty = false;
 
@@ -641,6 +652,12 @@ impl Service {
                 dirty |= !records.is_empty();
                 self.publish(&records);
             }
+            if last_watch.elapsed() >= watch_every {
+                last_watch = Instant::now();
+                let records = self.poll_watched_folders();
+                dirty |= !records.is_empty();
+                self.publish(&records);
+            }
             if last_ping.elapsed() >= ping {
                 last_ping = Instant::now();
                 let probes: Vec<_> = self
@@ -664,6 +681,28 @@ impl Service {
             }
             self.refresh_snapshot();
         }
+    }
+
+    /// Scans every folder a `file_arrived` trigger names and feeds new files to the engine.
+    fn poll_watched_folders(&mut self) -> Vec<ExecutionRecord> {
+        let folders: BTreeSet<String> = self
+            .engine
+            .pack()
+            .rules
+            .iter()
+            .filter_map(|rule| match &rule.trigger.spec {
+                TriggerSpec::FileArrived { folder, .. } => Some(folder.clone()),
+                _ => None,
+            })
+            .collect();
+        let mut records = Vec::new();
+        for arrival in self.watch.poll(&folders) {
+            records.extend(self.engine.handle_event(Event::FileArrived {
+                folder: arrival.folder,
+                path: arrival.path,
+            }));
+        }
+        records
     }
 
     fn handle_msg(&mut self, msg: Msg) -> Vec<ExecutionRecord> {

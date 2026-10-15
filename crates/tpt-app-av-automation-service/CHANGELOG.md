@@ -6,6 +6,10 @@ changes are recorded in the [root changelog](../../CHANGELOG.md).
 
 ## [Unreleased]
 
+### Added
+- `watch_interval_ms` and `webhook_allow` settings; folders named by `file_arrived` triggers are polled.
+- `POST /events/job` on the local API for background-job results.
+
 ### Fixed / Changed
 - A mistyped key in the service settings (including a misspelled `api:` key) was silently ignored; it is now an error.
 

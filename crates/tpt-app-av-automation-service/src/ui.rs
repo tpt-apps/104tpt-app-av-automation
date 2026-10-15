@@ -357,6 +357,24 @@ impl UiBridge {
                         label: "API / CLI invocation",
                         example: json!({ "type": "api", "name": "panic-run" }),
                     },
+                    CatalogueEntry {
+                        kind: "file_arrived",
+                        label: "File arrives in a watched folder",
+                        example: json!({
+                            "type": "file_arrived",
+                            "folder": "/media/ingest",
+                            "extensions": ["mov", "mxf"],
+                        }),
+                    },
+                    CatalogueEntry {
+                        kind: "job",
+                        label: "Background job completed or failed",
+                        example: json!({
+                            "type": "job",
+                            "source": "qc",
+                            "outcome": "failed",
+                        }),
+                    },
                 ],
             },
             CatalogueGroup {
@@ -501,6 +519,15 @@ impl UiBridge {
                         }),
                     },
                     CatalogueEntry {
+                        kind: "notify.webhook",
+                        label: "Webhook notification (opt-in, http only)",
+                        example: json!({
+                            "type": "notify.webhook",
+                            "url": "http://192.168.1.50:8080/hook",
+                            "message": "Main display lost signal",
+                        }),
+                    },
+                    CatalogueEntry {
                         kind: "workflow.wait",
                         label: "Wait",
                         example: json!({ "type": "workflow.wait", "ms": 1000 }),
@@ -569,8 +596,8 @@ mod tests {
         }
     }
 
-    /// The catalogue must cover the whole MVP matrix: 9 triggers, 6 conditions, 13 actions
-    /// (spec §7, §8).
+    /// The catalogue must cover the whole matrix: the MVP's 9 triggers, 6 conditions and 13 actions
+    /// plus the Phase 4 media-pipeline triggers and the opt-in webhook action (spec §7, §8).
     #[test]
     fn catalogue_covers_every_mvp_type() {
         let catalogue = UiBridge::catalogue();
@@ -581,8 +608,8 @@ mod tests {
                 .map(|g| g.entries.len())
                 .unwrap_or(0)
         };
-        assert_eq!(count("trigger"), 9, "trigger catalogue is incomplete");
+        assert_eq!(count("trigger"), 11, "trigger catalogue is incomplete");
         assert_eq!(count("condition"), 6, "condition catalogue is incomplete");
-        assert_eq!(count("action"), 13, "action catalogue is incomplete");
+        assert_eq!(count("action"), 14, "action catalogue is incomplete");
     }
 }

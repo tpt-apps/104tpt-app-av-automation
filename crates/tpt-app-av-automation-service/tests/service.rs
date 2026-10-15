@@ -1,7 +1,7 @@
 //! The service running for real: sockets, persistence and restarts (spec §11, §14, §16).
 
 use std::io::{Read, Write};
-use std::net::{SocketAddr, TcpStream, UdpSocket};
+use std::net::{SocketAddr, TcpListener, TcpStream, UdpSocket};
 use std::sync::Arc;
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
@@ -766,6 +766,191 @@ rules:
     assert_eq!(store.incidents(10).unwrap().len(), 1);
     drop(store);
     let _ = std::fs::remove_dir_all(dir);
+}
+
+/// Sends a bearer-authenticated JSON POST and returns the status code.
+fn post_json(addr: SocketAddr, path: &str, body: &str) -> u16 {
+    let mut stream = TcpStream::connect(addr).unwrap();
+    stream
+        .set_read_timeout(Some(Duration::from_secs(5)))
+        .unwrap();
+    let request = format!(
+        "POST {path} HTTP/1.1\r\nHost: 127.0.0.1\r\nAuthorization: Bearer {TOKEN}\r\n\
+         Content-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        body.len()
+    );
+    stream.write_all(request.as_bytes()).unwrap();
+    let mut raw = String::new();
+    stream.read_to_string(&mut raw).unwrap();
+    raw.split(' ').nth(1).unwrap().parse().unwrap()
+}
+
+const JOB_PACK: &str = r#"
+format_version: 1
+name: Jobs
+revision: 1
+rules:
+  - id: qc-failed
+    name: QC failed
+    armed: true
+    trigger: { type: job, source: qc, outcome: failed }
+    actions:
+      - { id: log, type: log.incident, severity: high, message: "QC failed" }
+"#;
+
+#[test]
+fn a_job_result_posted_to_the_api_runs_only_the_matching_rule() {
+    let db = std::env::temp_dir().join(format!("tpt-av-jobs-{}.db", std::process::id()));
+    let _ = std::fs::remove_file(&db);
+    let running = Running::start(build(
+        JOB_PACK,
+        config(),
+        Some(Store::open(&db).unwrap()),
+        Arc::new(SystemClock),
+    ));
+    let addr = running.api();
+    assert_eq!(
+        post_json(
+            addr,
+            "/events/job",
+            r#"{"source":"qc","job_id":"j-9","outcome":"completed"}"#
+        ),
+        202
+    );
+    assert_eq!(
+        post_json(
+            addr,
+            "/events/job",
+            r#"{"source":"qc","job_id":"j-10","outcome":"failed"}"#
+        ),
+        202
+    );
+    wait_until("the QC failure to be logged", || {
+        let (_, body) = authed(addr, "GET", "/incidents");
+        body["incidents"].as_array().is_some_and(|a| a.len() == 1)
+    });
+    // Malformed producer reports are refused and never reach the engine.
+    assert_eq!(post_json(addr, "/events/job", r#"{"source":"qc"}"#), 400);
+    assert_eq!(
+        post_json(
+            addr,
+            "/events/job",
+            r#"{"source":"qc","job_id":"x","outcome":"maybe"}"#
+        ),
+        400
+    );
+    assert_eq!(
+        post_json(
+            addr,
+            "/events/job",
+            r#"{"source":"bad name","job_id":"x","outcome":"failed"}"#
+        ),
+        400
+    );
+    assert_eq!(post_json(addr, "/events/job", "not json"), 400);
+    drop(running);
+    let _ = std::fs::remove_file(&db);
+}
+
+#[test]
+fn a_file_landing_in_a_watched_folder_runs_the_rule_once() {
+    let dir = std::env::temp_dir().join(format!("tpt-av-watch-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("already-here.mov"), b"old").unwrap();
+    let db = dir.join("state.db");
+    let pack = format!(
+        r#"
+format_version: 1
+name: Ingest
+revision: 1
+rules:
+  - id: ingest
+    name: Ingest
+    armed: true
+    trigger: {{ type: file_arrived, folder: '{}', extensions: [mov] }}
+    actions:
+      - {{ id: log, type: log.incident, severity: normal, message: "new clip" }}
+"#,
+        dir.to_string_lossy()
+    );
+    let running = Running::start(build(
+        &pack,
+        ServiceConfig {
+            watch_interval_ms: 50,
+            ..config()
+        },
+        Some(Store::open(&db).unwrap()),
+        Arc::new(SystemClock),
+    ));
+    let addr = running.api();
+    // Give the baseline scan a moment to record what is already in the folder.
+    std::thread::sleep(Duration::from_millis(300));
+    std::fs::write(dir.join("clip.mov"), b"frame data").unwrap();
+    std::fs::write(dir.join("notes.txt"), b"not a clip").unwrap();
+    wait_until("the new clip to be ingested", || {
+        let (_, body) = authed(addr, "GET", "/incidents");
+        body["incidents"].as_array().is_some_and(|a| !a.is_empty())
+    });
+    std::thread::sleep(Duration::from_millis(300));
+    let (_, body) = authed(addr, "GET", "/incidents");
+    assert_eq!(
+        body["incidents"].as_array().unwrap().len(),
+        1,
+        "the existing file and the non-matching file must not fire the rule"
+    );
+    drop(running);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn a_webhook_action_posts_to_an_allow_listed_endpoint() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!("http://{}/hook", listener.local_addr().unwrap());
+    let server = std::thread::spawn(move || {
+        let (mut conn, _) = listener.accept().unwrap();
+        conn.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+        let mut raw = Vec::new();
+        let mut buf = [0u8; 1024];
+        while !String::from_utf8_lossy(&raw).contains("cue fired") {
+            let n = conn.read(&mut buf).unwrap_or(0);
+            if n == 0 {
+                break;
+            }
+            raw.extend_from_slice(&buf[..n]);
+        }
+        conn.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+            .unwrap();
+        String::from_utf8_lossy(&raw).into_owned()
+    });
+    let pack = format!(
+        r#"
+format_version: 1
+name: Hooks
+revision: 1
+rules:
+  - id: hook
+    name: Hook
+    armed: true
+    trigger: {{ type: manual }}
+    actions:
+      - {{ id: post, type: notify.webhook, url: "{url}", message: "cue fired" }}
+"#
+    );
+    let running = Running::start(build(
+        &pack,
+        ServiceConfig {
+            webhook_allow: vec![url.clone()],
+            ..config()
+        },
+        None,
+        Arc::new(SystemClock),
+    ));
+    let (status, _) = authed(running.api(), "POST", "/rules/hook/run");
+    assert_eq!(status, 200);
+    let received = server.join().unwrap();
+    assert!(received.starts_with("POST /hook HTTP/1.1"), "{received}");
+    assert!(received.contains(r#""message":"cue fired""#), "{received}");
 }
 
 /// A pack triggered by a full 32-bit MIDI 2.0 control change on UMP group 2.

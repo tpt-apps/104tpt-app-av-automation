@@ -9,6 +9,7 @@ pub mod config;
 pub mod runtime;
 pub mod store;
 pub mod ui;
+mod watch;
 pub mod watchdog;
 mod ws;
 

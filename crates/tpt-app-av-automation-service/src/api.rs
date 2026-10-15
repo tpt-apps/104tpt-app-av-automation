@@ -21,7 +21,7 @@ use std::thread::JoinHandle;
 use std::time::Duration;
 
 use serde_json::{json, Value};
-use tpt_app_av_automation_core::{DeviceHealth, Error, Result};
+use tpt_app_av_automation_core::{DeviceHealth, Error, Event, JobOutcome, Result};
 use tpt_app_av_automation_model::ExecutionStatus;
 use tpt_app_av_automation_report::Filter;
 
@@ -459,7 +459,65 @@ pub fn route(req: &Request, handle: &ServiceHandle, token: &str) -> Outcome {
             }
         }
         (["events"], _) => not_allowed(),
+        (["events", "job"], "POST") => respond(job_event(req, handle)),
+        (["events", "job"], _) => not_allowed(),
         _ => respond(Response::error(404, "not found")),
+    }
+}
+
+/// Accepts a background-job result from a producer such as TPT Media QC or Forensics and feeds it
+/// to the engine as a `job` event (spec §5.2, §7.5).
+///
+/// The body is `{"source": "qc", "job_id": "…", "outcome": "completed" | "failed", "job_kind": "…"}`
+/// where `job_kind` is optional.
+fn job_event(req: &Request, handle: &ServiceHandle) -> Response {
+    let body: Value = match serde_json::from_slice(&req.body) {
+        Ok(body @ Value::Object(_)) => body,
+        _ => return Response::error(400, "the body must be a JSON object"),
+    };
+    let text = |key: &str| body.get(key).and_then(Value::as_str).map(str::to_owned);
+    let (Some(source), Some(job_id), Some(outcome)) =
+        (text("source"), text("job_id"), text("outcome"))
+    else {
+        return Response::error(400, "source, job_id and outcome are required");
+    };
+    let outcome = match outcome.as_str() {
+        "completed" => JobOutcome::Completed,
+        "failed" => JobOutcome::Failed,
+        _ => return Response::error(400, "outcome must be `completed` or `failed`"),
+    };
+    let ident_ok = |s: &str| {
+        !s.is_empty()
+            && s.len() <= 64
+            && s.chars()
+                .all(|c| c.is_ascii_alphanumeric() || "_-.".contains(c))
+    };
+    if !ident_ok(&source) {
+        return Response::error(
+            400,
+            "source may contain only letters, digits, `_`, `-` and `.`",
+        );
+    }
+    if job_id.is_empty() || job_id.len() > 128 {
+        return Response::error(400, "job_id must be between 1 and 128 characters");
+    }
+    let job_kind = text("job_kind");
+    if job_kind.as_deref().is_some_and(|k| !ident_ok(k)) {
+        return Response::error(
+            400,
+            "job_kind may contain only letters, digits, `_`, `-` and `.`",
+        );
+    }
+    let accepted = handle.send_event(Event::Job {
+        source,
+        job_id,
+        outcome,
+        job_kind,
+    });
+    if accepted {
+        Response::json(202, json!({ "accepted": true }))
+    } else {
+        Response::error(503, "the event queue is full or the service is stopping")
     }
 }
 

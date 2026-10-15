@@ -79,10 +79,21 @@ pub struct ServiceConfig {
     /// Executions kept in the database.
     #[serde(default = "default_keep")]
     pub keep_executions: u64,
+    /// URL prefixes that `notify.webhook` actions may call (spec §8.3). Empty disables outbound
+    /// webhooks entirely. Only `http://` prefixes are accepted.
+    #[serde(default)]
+    pub webhook_allow: Vec<String>,
+    /// How often watched folders (`file_arrived` triggers) are polled, in milliseconds.
+    #[serde(default = "default_watch_ms")]
+    pub watch_interval_ms: u64,
 }
 
 fn default_tick_ms() -> u64 {
     250
+}
+
+fn default_watch_ms() -> u64 {
+    1_000
 }
 
 fn default_ping_ms() -> u64 {
@@ -105,6 +116,8 @@ impl Default for ServiceConfig {
             exec_allow: Vec::new(),
             simulate: false,
             keep_executions: default_keep(),
+            webhook_allow: Vec::new(),
+            watch_interval_ms: default_watch_ms(),
         }
     }
 }
@@ -133,6 +146,20 @@ impl ServiceConfig {
                 "heartbeat_interval_ms",
                 "must be greater than zero",
             ));
+        }
+        if self.watch_interval_ms == 0 {
+            out.push(Diagnostic::error(
+                "watch_interval_ms",
+                "must be greater than zero",
+            ));
+        }
+        for (i, prefix) in self.webhook_allow.iter().enumerate() {
+            if !prefix.starts_with("http://") || prefix.len() <= "http://".len() {
+                out.push(Diagnostic::error(
+                    format!("webhook_allow[{i}]"),
+                    format!("`{prefix}` must be an http:// URL prefix (https is not supported)"),
+                ));
+            }
         }
         for (i, l) in self.listeners.iter().enumerate() {
             if !matches!(
@@ -220,6 +247,10 @@ mod tests {
         assert!(
             config.exec_allow.is_empty(),
             "external programs are off by default"
+        );
+        assert!(
+            config.webhook_allow.is_empty(),
+            "outbound webhooks are off by default"
         );
         assert!(config.state_db.is_none());
         assert!(errors(&config).is_empty());

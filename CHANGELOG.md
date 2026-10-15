@@ -13,6 +13,11 @@ released. The CLI exit-code contract (0–6) and the `format_version: 1` rule fo
   misspelled `api:` key) was silently ignored; it is now an error.
 
 ### Added
+- Media-pipeline triggers: `file_arrived` fires when a stable file appears in a watched folder
+  (polled, first scan is a baseline, optional extension filter), and `job` fires when a producer
+  reports a completed or failed background job via `POST /events/job`.
+- `notify.webhook` action: an opt-in HTTP POST, disabled by default and limited to the URL prefixes
+  listed in `webhook_allow`. `https://` is refused (no TLS client in the tree).
 - Desktop device manager: add, edit and delete devices from the Devices tab. Changes apply live
   without a restart and are written to the devices file at once (the original is kept once as
   `devices.yaml.bak`); a device a rule still uses cannot be deleted. With no devices file
