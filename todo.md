@@ -267,10 +267,23 @@ Phase 4 and 5 are only partly started; each open item's `Status` line says what 
     `job` events, which do not carry finding details. Untested against Forensics.
 - [ ] Full visual rule-builder canvas (beyond YAML-backed forms) (§20)
 - [ ] Richer conflict-resolution and priority tooling (§20)
+  - _Status:_ partial. Per-rule `conflict: reject | last_wins` is implemented and tested, and a
+    `last_wins` write records the rule it overrode. Not done: a UI for editing priorities, and a
+    merge mode that combines values rather than picking one.
 - [ ] Audio/video signal-condition triggers: signal lost, black frame, freeze frame (`tpt-visual`, `tpt-kinetix`) (§7.4, §20)
+  - _Status:_ partial. `signal` triggers for lost, restored, black and freeze are implemented and
+    tested. Producers report them over `POST /events/signal`; this repository does not measure video,
+    so `tpt-visual` and `tpt-kinetix` are not used.
 - [ ] Audio signal-condition triggers: silence, clipping, loudness/level thresholds (`tpt-audio`/`tpt-dsp`) (§7.4, §20)
+  - _Status:_ partial. Silence, clipping and level-threshold triggers are implemented and tested,
+    fed by producers over the same endpoint. `tpt-audio` and `tpt-dsp` are not used.
 - [ ] A/V drift and timing-discontinuity triggers (`tpt-av-sync`) (§7.4, §20)
+  - _Status:_ partial. The `drift` trigger (milliseconds against a threshold) is implemented and
+    tested, fed by producers. Timing discontinuities are not modelled, and `tpt-av-sync` is not used.
 - [ ] Import device inventory from TPT AV Commissioning (§5.2, §12.3, §20)
+  - _Status:_ partial. `import-devices` merges an inventory in the device-file format, with a
+    refusal on clashes and no write on invalid input. No commissioning export format exists in this
+    repository, so it is not mapped from the real tool.
 - [ ] Studio packaging tier: multi-room/zone licensing, priority updates (§22)
 
 ## Phase 5 — Post-MVP Phase 3 (§20 Phase 3, §22 Facility/Enterprise tier)

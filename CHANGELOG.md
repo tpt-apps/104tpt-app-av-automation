@@ -13,6 +13,13 @@ released. The CLI exit-code contract (0–6) and the `format_version: 1` rule fo
   misspelled `api:` key) was silently ignored; it is now an error.
 
 ### Added
+- `conflict: last_wins` on a rule: its write overrides an earlier rule's write to the same slot, and
+  the step records which rule it overrode. The default, `reject`, is unchanged.
+- Signal triggers: `signal` fires on a measurement a producer reports to `POST /events/signal`
+  (lost, restored, silence, clipping, black, freeze, and level or drift against a threshold).
+  The engine does not analyse media itself.
+- `import-devices` command: merges an inventory in the device-file format into a device file,
+  refusing id clashes unless `--replace` is given, and writes nothing if either file is invalid.
 - Media-pipeline triggers: `file_arrived` fires when a stable file appears in a watched folder
   (polled, first scan is a baseline, optional extension filter), and `job` fires when a producer
   reports a completed or failed background job via `POST /events/job`.

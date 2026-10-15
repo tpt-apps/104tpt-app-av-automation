@@ -121,6 +121,23 @@ Deleting a device is refused while any rule still uses it. The message lists tho
 tpt-av-automation validate --rules my-pack.yaml --devices devices.yaml
 ```
 
+## Importing an inventory
+
+An inventory in the same format as a device file (for example one exported from a commissioning
+tool, once it is in this format) can be merged into a device file:
+
+```sh
+tpt-av-automation import-devices --from inventory.yaml --into devices.yaml
+tpt-av-automation import-devices --from inventory.yaml --into devices.yaml --replace
+```
+
+Nothing is written unless the inventory is valid and the merged file is valid. A device whose id
+already exists is refused unless `--replace` is given. A new target file is created if it is
+missing, and an existing one is kept once as `devices.yaml.bak` before it changes.
+
+No commissioning export format is defined in this repository, so the importer accepts only this
+device-file format. Mapping another tool's export onto it is still to be done.
+
 ## Health and heartbeats
 
 Each device has a health state: `online`, `degraded`, `offline` or `unknown`.

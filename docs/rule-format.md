@@ -16,6 +16,7 @@ rules:
     version: 2               # recorded in every execution
     armed: false             # default false: disarmed = simulate only
     priority: critical       # critical | normal (default) | low | informational
+    conflict: reject         # reject (default) | last_wins; see "Conflicts" below
     tags: [show, lighting]
     reentrant: false
     trigger: { type: schedule, at: "18:55", days: [mon, tue, wed, thu, fri] }
@@ -53,6 +54,20 @@ rules:
 
 Device *existence* is checked separately against a device file (`validate --devices`), because packs
 are portable and registries are per-site.
+
+## Conflicts
+
+Rules matched by one event run in `(priority, id)` order. The first rule to write a slot of a
+device owns that slot for the rest of the event. A later rule writing a *different* value to an
+overlapping slot is decided by its own `conflict` setting:
+
+* `reject` (default): the later step is `skipped` with the conflict recorded, and the earlier rule
+  keeps the slot.
+* `last_wins`: the write goes ahead, so this rule's value is the one the device ends with. The
+  step's `detail` says which rule it overrode.
+
+The order is deterministic, so `last_wins` does not make results depend on timing. Writing the same
+value twice is never a conflict.
 
 ## Step fields common to every action
 

@@ -63,12 +63,35 @@ trigger: { type: job, source: qc, outcome: failed, job_kind: transcode }
 `source` and `outcome` are optional; leaving `outcome` out matches both. `simulate` accepts
 `file:/path/clip.mov` and `job:qc:failed[:kind]` for testing.
 
+## Signal triggers (spec §7.4)
+
+`signal` fires on a measurement a producer reports to `POST /events/signal`. The engine never
+measures audio or video itself: a producer that already has the signal (an audio desk, a playout
+system, a monitoring probe) does the analysis and reports the result. That keeps the rule engine
+free of capture and analysis dependencies. `tpt-visual`, `tpt-dsp` or `tpt-av-sync` can be the
+producer, but that is not wired up in this repository.
+
+| `signal` | Carries a value | Meaning |
+|----------|-----------------|---------|
+| `lost` · `restored` | no | the signal disappeared or came back |
+| `silence` · `clipping` | no | audio is silent or clipping |
+| `black` · `freeze` | no | video is black or frozen |
+| `level` | dBFS | audio level, tested with `comparison` and `value` |
+| `drift` | ms | audio/video drift, tested with `comparison` and `value` |
+
+```yaml
+trigger: { type: signal, source: audio-desk, channel: main-L, signal: level, comparison: lt, value: -20 }
+trigger: { type: signal, source: playout, signal: black }
+```
+
+`source` and `channel` are optional filters. A yes/no kind must not have a `comparison` or `value`,
+and `level` and `drift` must have both. For testing, `simulate` accepts `signal:audio-desk:level=-25`
+or `signal:playout:black`.
+
 ## Not yet implemented
 
-Control-surface button/fader events, the Phase 2 signal-condition triggers (`signal_lost`,
-black/freeze frame, audio silence/clipping) and A/V drift. The media-pipeline triggers are **not**
-wired to `tpt-av-asset` yet: job results arrive from producers over the API, and watch folders are
-polled directly.
+Control-surface button/fader events. The media-pipeline triggers are **not** wired to `tpt-av-asset`
+yet: job results arrive from producers over the API, and watch folders are polled directly.
 
 MIDI 2.0 arrives as raw Universal MIDI Packets on a `ump` UDP listener rather than from a local
 `midi` port, because no desktop platform currently exposes native MIDI 2.0 ports to `midir`. The

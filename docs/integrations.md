@@ -116,6 +116,7 @@ least 16 characters is required. Every request needs `Authorization: Bearer <tok
 | POST | `/rules/:id/arm` · `/disarm` · `/run` | `run` returns machine results |
 | POST | `/executions/:id/cancel` | cancel a running chain |
 | POST | `/events/job` | a background job finished: `{"source", "job_id", "outcome", "job_kind"?}` where outcome is `completed` or `failed`; `202` when queued, `400` on a malformed report |
+| POST | `/events/signal` | a producer's signal measurement: `{"source", "channel"?, "signal", "value"?}`; `level` and `drift` need a numeric `value`, the other kinds must not carry one; `202`/`400` as above |
 | GET | `/events` | WebSocket: one JSON execution record per message |
 
 ## Sibling TPT apps (spec §5.2)
@@ -123,7 +124,7 @@ least 16 characters is required. Every request needs `Authorization: Bearer <tok
 A sibling app reports results through `POST /events/job` (above); the engine has no compile-time
 dependency on it. The request contract is defined here, but it has **not** been tested against
 TPT Media QC, TPT Media Forensics or TPT AV Commissioning, whose own event formats are not in this
-repository. Commissioning inventory import is still open (`todo.md`).
+repository. For a commissioning inventory, see `import-devices` in [devices](devices.md#importing-an-inventory).
 
 ## Outbound webhooks (spec §8.3)
 
