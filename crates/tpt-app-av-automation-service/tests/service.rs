@@ -852,6 +852,98 @@ fn a_job_result_posted_to_the_api_runs_only_the_matching_rule() {
     let _ = std::fs::remove_file(&db);
 }
 
+const SIGNAL_PACK: &str = r#"
+format_version: 1
+name: Audio
+revision: 1
+rules:
+  - id: too-loud
+    name: Too loud
+    armed: true
+    trigger: { type: signal, source: audio-desk, signal: level, comparison: gt, value: -3 }
+    actions:
+      - { id: log, type: log.incident, severity: high, message: "over -3 dBFS" }
+  - id: lost
+    name: Playout lost
+    armed: true
+    trigger: { type: signal, source: playout, signal: lost }
+    actions:
+      - { id: log2, type: log.incident, severity: critical, message: "playout lost" }
+"#;
+
+#[test]
+fn producer_signal_reports_run_only_the_rules_they_match() {
+    let db = std::env::temp_dir().join(format!("tpt-av-signal-{}.db", std::process::id()));
+    let _ = std::fs::remove_file(&db);
+    let running = Running::start(build(
+        SIGNAL_PACK,
+        config(),
+        Some(Store::open(&db).unwrap()),
+        Arc::new(SystemClock),
+    ));
+    let addr = running.api();
+    assert_eq!(
+        post_json(
+            addr,
+            "/events/signal",
+            r#"{"source":"audio-desk","channel":"main-L","signal":"level","value":-1.5}"#
+        ),
+        202
+    );
+    // Below the threshold: no rule fires.
+    assert_eq!(
+        post_json(
+            addr,
+            "/events/signal",
+            r#"{"source":"audio-desk","signal":"level","value":-9}"#
+        ),
+        202
+    );
+    assert_eq!(
+        post_json(
+            addr,
+            "/events/signal",
+            r#"{"source":"playout","signal":"lost"}"#
+        ),
+        202
+    );
+    wait_until("the two matching signal reports to be logged", || {
+        let (_, body) = authed(addr, "GET", "/incidents");
+        body["incidents"].as_array().is_some_and(|a| a.len() == 2)
+    });
+    // Malformed reports are refused.
+    assert_eq!(
+        post_json(
+            addr,
+            "/events/signal",
+            r#"{"source":"audio-desk","signal":"level"}"#
+        ),
+        400
+    );
+    assert_eq!(
+        post_json(
+            addr,
+            "/events/signal",
+            r#"{"source":"playout","signal":"lost","value":1}"#
+        ),
+        400
+    );
+    assert_eq!(
+        post_json(
+            addr,
+            "/events/signal",
+            r#"{"source":"playout","signal":"wobble"}"#
+        ),
+        400
+    );
+    assert_eq!(
+        post_json(addr, "/events/signal", r#"{"signal":"lost"}"#),
+        400
+    );
+    drop(running);
+    let _ = std::fs::remove_file(&db);
+}
+
 #[test]
 fn a_file_landing_in_a_watched_folder_runs_the_rule_once() {
     let dir = std::env::temp_dir().join(format!("tpt-av-watch-{}", std::process::id()));

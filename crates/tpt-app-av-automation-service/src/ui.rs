@@ -375,6 +375,17 @@ impl UiBridge {
                             "outcome": "failed",
                         }),
                     },
+                    CatalogueEntry {
+                        kind: "signal",
+                        label: "Media signal measured by a producer",
+                        example: json!({
+                            "type": "signal",
+                            "source": "audio-desk",
+                            "signal": "level",
+                            "comparison": "lt",
+                            "value": -20.0,
+                        }),
+                    },
                 ],
             },
             CatalogueGroup {
@@ -608,7 +619,7 @@ mod tests {
                 .map(|g| g.entries.len())
                 .unwrap_or(0)
         };
-        assert_eq!(count("trigger"), 11, "trigger catalogue is incomplete");
+        assert_eq!(count("trigger"), 12, "trigger catalogue is incomplete");
         assert_eq!(count("condition"), 6, "condition catalogue is incomplete");
         assert_eq!(count("action"), 14, "action catalogue is incomplete");
     }

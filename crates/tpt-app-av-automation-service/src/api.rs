@@ -21,7 +21,7 @@ use std::thread::JoinHandle;
 use std::time::Duration;
 
 use serde_json::{json, Value};
-use tpt_app_av_automation_core::{DeviceHealth, Error, Event, JobOutcome, Result};
+use tpt_app_av_automation_core::{DeviceHealth, Error, Event, JobOutcome, Result, SignalKind};
 use tpt_app_av_automation_model::ExecutionStatus;
 use tpt_app_av_automation_report::Filter;
 
@@ -461,7 +461,82 @@ pub fn route(req: &Request, handle: &ServiceHandle, token: &str) -> Outcome {
         (["events"], _) => not_allowed(),
         (["events", "job"], "POST") => respond(job_event(req, handle)),
         (["events", "job"], _) => not_allowed(),
+        (["events", "signal"], "POST") => respond(signal_event(req, handle)),
+        (["events", "signal"], _) => not_allowed(),
         _ => respond(Response::error(404, "not found")),
+    }
+}
+
+/// Accepts a media-signal observation from a producer, such as an audio desk or playout system
+/// (spec §7.4). Producers measure; the engine compares.
+///
+/// The body is `{"source": "…", "channel": "…"?, "signal": "silence" | "level" | …, "value": n?}`.
+/// `level` and `drift` need a numeric `value`; the other kinds must not carry one.
+fn signal_event(req: &Request, handle: &ServiceHandle) -> Response {
+    let body: Value = match serde_json::from_slice(&req.body) {
+        Ok(body @ Value::Object(_)) => body,
+        _ => return Response::error(400, "the body must be a JSON object"),
+    };
+    let text = |key: &str| body.get(key).and_then(Value::as_str).map(str::to_owned);
+    let ident_ok = |s: &str| {
+        !s.is_empty()
+            && s.len() <= 64
+            && s.chars()
+                .all(|c| c.is_ascii_alphanumeric() || "_-.".contains(c))
+    };
+    let Some(source) = text("source") else {
+        return Response::error(400, "source is required");
+    };
+    if !ident_ok(&source) {
+        return Response::error(
+            400,
+            "source may contain only letters, digits, `_`, `-` and `.`",
+        );
+    }
+    let channel = text("channel");
+    if channel.as_deref().is_some_and(|c| !ident_ok(c)) {
+        return Response::error(
+            400,
+            "channel may contain only letters, digits, `_`, `-` and `.`",
+        );
+    }
+    let Some(name) = text("signal") else {
+        return Response::error(400, "signal is required");
+    };
+    let Some(signal) = SignalKind::ALL.into_iter().find(|k| k.as_str() == name) else {
+        return Response::error(400, format!("unknown signal `{name}`"));
+    };
+    let value = match body.get("value") {
+        None | Some(Value::Null) => None,
+        Some(v) => match v.as_f64().filter(|f| f.is_finite()) {
+            Some(f) => Some(f),
+            None => return Response::error(400, "value must be a finite number"),
+        },
+    };
+    if signal.carries_value() != value.is_some() {
+        return Response::error(
+            400,
+            format!(
+                "signal `{}` {} a numeric value",
+                signal.as_str(),
+                if signal.carries_value() {
+                    "needs"
+                } else {
+                    "must not carry"
+                }
+            ),
+        );
+    }
+    let accepted = handle.send_event(Event::Signal {
+        source,
+        channel,
+        signal,
+        value,
+    });
+    if accepted {
+        Response::json(202, json!({ "accepted": true }))
+    } else {
+        Response::error(503, "the event queue is full or the service is stopping")
     }
 }
 
