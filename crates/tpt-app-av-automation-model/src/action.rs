@@ -181,6 +181,15 @@ pub enum ActionSpec {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         message: Option<String>,
     },
+    /// POST a JSON notification to an HTTP endpoint (spec §8.3). Opt-in: the service refuses it
+    /// unless the URL falls under one of its configured `webhook_allow` prefixes.
+    #[serde(rename = "notify.webhook")]
+    Webhook {
+        /// Target URL. Only `http://` is supported.
+        url: String,
+        /// Message included in the payload.
+        message: String,
+    },
     /// Pause the chain (spec §8.4).
     #[serde(rename = "workflow.wait")]
     Wait {
@@ -241,6 +250,7 @@ impl ActionSpec {
             "media.audio_route",
             "notify.operator",
             "log.incident",
+            "notify.webhook",
             "workflow.wait",
             "workflow.invoke_rule",
             "workflow.exec",
@@ -264,6 +274,7 @@ impl ActionSpec {
             ActionSpec::MediaAudioRoute { .. } => "media.audio_route",
             ActionSpec::NotifyOperator { .. } => "notify.operator",
             ActionSpec::LogIncident { .. } => "log.incident",
+            ActionSpec::Webhook { .. } => "notify.webhook",
             ActionSpec::Wait { .. } => "workflow.wait",
             ActionSpec::InvokeRule { .. } => "workflow.invoke_rule",
             ActionSpec::Exec { .. } => "workflow.exec",

@@ -406,6 +406,40 @@ fn validate_trigger(
                 }
             }
         }
+        TriggerSpec::FileArrived { folder, extensions } => {
+            if folder.trim().is_empty() {
+                diagnostics.push(Diagnostic::error(
+                    format!("{loc}.folder"),
+                    "folder must not be empty",
+                ));
+            }
+            for (i, ext) in extensions.iter().enumerate() {
+                if ext.is_empty() || ext.contains('.') {
+                    diagnostics.push(Diagnostic::error(
+                        format!("{loc}.extensions[{i}]"),
+                        "extensions must be written without a leading dot, e.g. `mov`",
+                    ));
+                }
+            }
+        }
+        TriggerSpec::Job {
+            source, job_kind, ..
+        } => {
+            for (field, value) in [("source", source), ("job_kind", job_kind)] {
+                if let Some(value) = value {
+                    if value.trim().is_empty()
+                        || !value
+                            .chars()
+                            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.'))
+                    {
+                        diagnostics.push(Diagnostic::error(
+                            format!("{loc}.{field}"),
+                            format!("{field} may contain only letters, digits, `_`, `-` and `.`"),
+                        ));
+                    }
+                }
+            }
+        }
         TriggerSpec::Manual => {}
     }
 }

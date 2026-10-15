@@ -4,7 +4,7 @@ use std::fmt;
 use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
-use tpt_app_av_automation_core::{DeviceHealth, Event, Result};
+use tpt_app_av_automation_core::{DeviceHealth, Event, JobOutcome, Result};
 
 use crate::condition::Comparison;
 use crate::cron::CronSchedule;
@@ -661,6 +661,29 @@ pub enum TriggerSpec {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         name: Option<String>,
     },
+    /// A file appeared in a watched folder and stopped growing (spec §7.5).
+    #[serde(rename = "file_arrived")]
+    FileArrived {
+        /// Folder to watch, as the service sees it.
+        folder: String,
+        /// Only files with one of these extensions (no leading dot, case-insensitive). Empty means
+        /// any file.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        extensions: Vec<String>,
+    },
+    /// A background job finished, reported by a producer over the local API (spec §7.5).
+    #[serde(rename = "job")]
+    Job {
+        /// Producer name, e.g. `qc`. `None` matches any producer.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        source: Option<String>,
+        /// Outcome to match. `None` matches either outcome.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        outcome: Option<JobOutcome>,
+        /// Job category, e.g. `transcode`. `None` matches any category.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        job_kind: Option<String>,
+    },
 }
 
 impl TriggerSpec {
@@ -691,6 +714,8 @@ impl TriggerSpec {
             }
             TriggerSpec::Manual => false,
             TriggerSpec::Api { .. } => key == "name",
+            TriggerSpec::FileArrived { .. } => ["folder", "extensions"].contains(&key),
+            TriggerSpec::Job { .. } => ["source", "outcome", "job_kind"].contains(&key),
         }
     }
 }
@@ -807,6 +832,8 @@ impl Trigger {
             TriggerSpec::DeviceParameter { .. } => "device_parameter",
             TriggerSpec::Manual => "manual",
             TriggerSpec::Api { .. } => "api",
+            TriggerSpec::FileArrived { .. } => "file_arrived",
+            TriggerSpec::Job { .. } => "job",
         }
     }
 
@@ -928,8 +955,50 @@ impl Trigger {
                 None => true,
                 Some(expected) => expected == observed,
             },
+            (
+                TriggerSpec::FileArrived { folder, extensions },
+                Event::FileArrived {
+                    folder: observed,
+                    path,
+                },
+            ) => folder == observed && extension_matches(extensions, path),
+            (
+                TriggerSpec::Job {
+                    source,
+                    outcome,
+                    job_kind,
+                },
+                Event::Job {
+                    source: observed_source,
+                    outcome: observed_outcome,
+                    job_kind: observed_kind,
+                    ..
+                },
+            ) => {
+                source.as_ref().is_none_or(|s| s == observed_source)
+                    && outcome.is_none_or(|o| o == *observed_outcome)
+                    && job_kind
+                        .as_ref()
+                        .is_none_or(|k| observed_kind.as_deref() == Some(k.as_str()))
+            }
             _ => false,
         }
+    }
+}
+
+/// Whether `path` has one of `extensions` (compared case-insensitively). An empty list accepts
+/// every file.
+pub fn extension_matches(extensions: &[String], path: &str) -> bool {
+    if extensions.is_empty() {
+        return true;
+    }
+    let observed = std::path::Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(str::to_ascii_lowercase);
+    match observed {
+        Some(observed) => extensions.iter().any(|e| e.eq_ignore_ascii_case(&observed)),
+        None => false,
     }
 }
 

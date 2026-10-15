@@ -239,6 +239,23 @@ pub fn validate_action_spec(spec: &ActionSpec, loc: &str, diagnostics: &mut Vec<
             }
         }
         ActionSpec::LogIncident { .. } => {}
+        ActionSpec::Webhook { url, message } => {
+            if !url.starts_with("http://")
+                || url.len() <= "http://".len()
+                || url.contains(char::is_whitespace)
+            {
+                diagnostics.push(Diagnostic::error(
+                    format!("{loc}.url"),
+                    "webhook URL must be an http:// URL with no whitespace (https is not supported)",
+                ));
+            }
+            if message.trim().is_empty() {
+                diagnostics.push(Diagnostic::error(
+                    format!("{loc}.message"),
+                    "webhook message must say something",
+                ));
+            }
+        }
         ActionSpec::UseAction { library } => {
             if library.trim().is_empty() {
                 diagnostics.push(Diagnostic::error(

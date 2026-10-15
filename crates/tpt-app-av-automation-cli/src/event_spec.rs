@@ -11,16 +11,21 @@
 //! | `param:projector-1:lamp_hours=1200` | a device-reported parameter |
 //! | `manual` or `manual:rule-id` | an operator "run now" |
 //! | `api:name` | a local API call |
+//! | `file:/watch/in/clip.mov` | a file arriving in its parent folder |
+//! | `job:qc:failed` or `job:qc:failed:transcode` | a background job ending |
 
 use std::collections::HashMap;
 
-use tpt_app_av_automation_core::{DeviceHealth, DmxLevel, Error, Event, MidiLevel, Result};
+use tpt_app_av_automation_core::{
+    DeviceHealth, DmxLevel, Error, Event, JobOutcome, MidiLevel, Result,
+};
 use tpt_app_av_automation_model::{LocalTime, MidiMessageKind, RulePack, TriggerSpec, Weekday};
 
 /// One-line usage summary, appended to parse errors.
 pub const USAGE: &str = "expected one of: schedule:HH:MM[@day], osc:/address[=v1,v2], \
 midi:kind:channel:number[:value], dmx:universe:channel=value, device:id:state, \
-heartbeat-missed:id:ms, param:id:name=value, manual[:rule], api:name";
+heartbeat-missed:id:ms, param:id:name=value, manual[:rule], api:name, \
+file:path, job:source:completed|failed[:kind]";
 
 fn bad(spec: &str, why: &str) -> Error {
     Error::Parse(format!("invalid event `{spec}`: {why}; {USAGE}"))
@@ -203,6 +208,44 @@ pub fn parse_event(spec: &str, pack: &RulePack) -> Result<Vec<Event>> {
                 device: device.to_owned(),
                 parameter: parameter.to_owned(),
                 value: number(spec, value, "number")?,
+            }])
+        }
+        "file" => {
+            if rest.is_empty() {
+                return Err(bad(spec, "expected file:path"));
+            }
+            // The folder is the file's parent, which is what a `file_arrived` trigger names.
+            let folder = std::path::Path::new(rest)
+                .parent()
+                .map(|p| p.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            Ok(vec![Event::FileArrived {
+                folder,
+                path: rest.to_owned(),
+            }])
+        }
+        "job" => {
+            let parts: Vec<&str> = rest.split(':').collect();
+            let (source, outcome, job_kind) = match parts.as_slice() {
+                [source, outcome] => (*source, *outcome, None),
+                [source, outcome, kind] => (*source, *outcome, Some((*kind).to_owned())),
+                _ => return Err(bad(spec, "expected job:source:completed|failed[:kind]")),
+            };
+            let outcome = match outcome {
+                "completed" => JobOutcome::Completed,
+                "failed" => JobOutcome::Failed,
+                other => {
+                    return Err(bad(
+                        spec,
+                        &format!("unknown outcome `{other}`; expected completed or failed"),
+                    ))
+                }
+            };
+            Ok(vec![Event::Job {
+                source: source.to_owned(),
+                job_id: "simulated".to_owned(),
+                outcome,
+                job_kind,
             }])
         }
         "manual" => Ok(vec![Event::Manual {

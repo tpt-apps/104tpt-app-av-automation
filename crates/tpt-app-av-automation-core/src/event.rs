@@ -189,6 +189,44 @@ pub enum Event {
         /// Free-form payload.
         payload: HashMap<String, String>,
     },
+    /// A file appeared in a watched folder and has stopped growing (spec §7.5).
+    FileArrived {
+        /// The watched folder, as written in the rule.
+        folder: String,
+        /// Full path of the new file.
+        path: String,
+    },
+    /// A background job finished, reported by a producer such as TPT Media QC or Forensics
+    /// (spec §7.5).
+    Job {
+        /// Producer name, e.g. `qc`, `forensics` or `pipeline`.
+        source: String,
+        /// Producer-assigned job identifier.
+        job_id: String,
+        /// How the job ended.
+        outcome: JobOutcome,
+        /// Optional job category, e.g. `transcode` or `qc`.
+        job_kind: Option<String>,
+    },
+}
+
+/// How a background job ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum JobOutcome {
+    /// The job finished successfully.
+    Completed,
+    /// The job failed.
+    Failed,
+}
+
+impl fmt::Display for JobOutcome {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            JobOutcome::Completed => "completed",
+            JobOutcome::Failed => "failed",
+        })
+    }
 }
 
 impl Event {
@@ -204,6 +242,8 @@ impl Event {
             Event::DeviceParameter { .. } => "device_parameter",
             Event::Manual { .. } => "manual",
             Event::Api { .. } => "api",
+            Event::FileArrived { .. } => "file_arrived",
+            Event::Job { .. } => "job",
         }
     }
 }
@@ -269,6 +309,22 @@ mod tests {
             Event::Api {
                 name: "n".into(),
                 payload: HashMap::new(),
+            },
+            Event::FileArrived {
+                folder: "/in".into(),
+                path: "/in/a.mov".into(),
+            },
+            Event::Job {
+                source: "qc".into(),
+                job_id: "j-1".into(),
+                outcome: JobOutcome::Failed,
+                job_kind: Some("qc".into()),
+            },
+            Event::Job {
+                source: "pipeline".into(),
+                job_id: "j-2".into(),
+                outcome: JobOutcome::Completed,
+                job_kind: None,
             },
         ];
         for event in events {

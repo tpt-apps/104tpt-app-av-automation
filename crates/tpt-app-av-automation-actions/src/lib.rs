@@ -14,6 +14,7 @@
 
 mod exec;
 mod sinks;
+mod webhook;
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -28,6 +29,7 @@ pub use sinks::{
     Incident, IncidentSink, MemorySink, Notice, Notifier, NullSleeper, Sleeper, ThreadSleeper,
     TracingSink,
 };
+pub use webhook::WebhookPolicy;
 
 /// Cooperative cancellation flag shared between the operator and a running chain (spec §10.2).
 #[derive(Debug, Clone, Default)]
@@ -96,6 +98,7 @@ pub struct Actions {
     incidents: Arc<dyn IncidentSink>,
     sleeper: Arc<dyn Sleeper>,
     exec_policy: ExecPolicy,
+    webhook_policy: WebhookPolicy,
 }
 
 impl Actions {
@@ -111,6 +114,7 @@ impl Actions {
             incidents,
             sleeper,
             exec_policy: ExecPolicy::default(),
+            webhook_policy: WebhookPolicy::default(),
         }
     }
 
@@ -140,6 +144,11 @@ impl Actions {
         self.exec_policy = policy;
     }
 
+    /// Replaces the outbound-webhook policy.
+    pub fn set_webhook_policy(&mut self, policy: WebhookPolicy) {
+        self.webhook_policy = policy;
+    }
+
     /// Describes what a step would do, without side effects.
     pub fn simulate(&self, step: &ActionStep, spec: &ActionSpec) -> String {
         match Command::from_spec(spec) {
@@ -159,6 +168,9 @@ impl Actions {
                         .map(|m| format!(" \"{m}\""))
                         .unwrap_or_default()
                 ),
+                ActionSpec::Webhook { url, message } => {
+                    format!("notify.webhook {url} \"{message}\"")
+                }
                 ActionSpec::Wait { ms } => format!("workflow.wait {ms}ms"),
                 ActionSpec::InvokeRule { rule } => format!("workflow.invoke_rule `{rule}`"),
                 ActionSpec::Exec { program, args, .. } => {
@@ -209,6 +221,19 @@ impl Actions {
                 }) {
                     Ok(()) => StepResult::ok(),
                     Err(e) => StepResult::failed(format!("incident log failed: {e}")),
+                }
+            }
+            ActionSpec::Webhook { url, message } => {
+                let body = serde_json::json!({
+                    "rule": ctx.rule_id,
+                    "rule_name": ctx.rule_name,
+                    "execution": ctx.execution_id,
+                    "message": message,
+                });
+                let bound = timeout_ms.unwrap_or(5_000);
+                StepResult {
+                    outcome: webhook::post(&self.webhook_policy, url, &body, bound),
+                    device_fault: None,
                 }
             }
             ActionSpec::Wait { ms } => {

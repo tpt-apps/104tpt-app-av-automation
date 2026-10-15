@@ -141,7 +141,7 @@ fn assert_parse_error(yaml: &str) {
 ///
 /// This list is the matrix's spine: a form missing from it cannot be silently untested, and
 /// `every_trigger_type_is_exercised` fails if a new form is added without a matrix entry.
-const TRIGGER_TYPES: [&str; 9] = [
+const TRIGGER_TYPES: [&str; 11] = [
     "schedule",
     "osc",
     "midi",
@@ -151,11 +151,13 @@ const TRIGGER_TYPES: [&str; 9] = [
     "device_parameter",
     "manual",
     "api",
+    "file_arrived",
+    "job",
 ];
 
 #[test]
 fn every_trigger_type_is_accepted_by_the_parser() {
-    let valid: [(&str, &str); 9] = [
+    let valid: [(&str, &str); 11] = [
         ("schedule", "    type: schedule\n    at: \"18:55\"\n"),
         ("osc", "    type: osc\n    address: /stage/lights\n"),
         (
@@ -180,6 +182,11 @@ fn every_trigger_type_is_accepted_by_the_parser() {
         ),
         ("manual", "    type: manual\n"),
         ("api", "    type: api\n"),
+        (
+            "file_arrived",
+            "    type: file_arrived\n    folder: /watch/in\n    extensions: [mov, mxf]\n",
+        ),
+        ("job", "    type: job\n    source: qc\n    outcome: failed\n"),
     ];
     assert_eq!(
         valid.len(),
@@ -429,6 +436,44 @@ fn api_trigger_name_boundaries() {
     );
 }
 
+// --- file_arrived and job -------------------------------------------------
+
+#[test]
+fn file_arrived_trigger_boundaries() {
+    assert_valid(&with_trigger(
+        "    type: file_arrived\n    folder: /watch/in\n",
+    ));
+    assert_rejected_mentioning(
+        &with_trigger("    type: file_arrived\n    folder: \"  \"\n"),
+        "folder must not be empty",
+    );
+    assert_rejected_mentioning(
+        &with_trigger("    type: file_arrived\n    folder: /in\n    extensions: [\".mov\"]\n"),
+        "without a leading dot",
+    );
+    assert_rejected_mentioning(
+        &with_trigger("    type: file_arrived\n    folder: /in\n    extensions: [\"\"]\n"),
+        "without a leading dot",
+    );
+}
+
+#[test]
+fn job_trigger_boundaries() {
+    assert_valid(&with_trigger("    type: job\n"));
+    assert_valid(&with_trigger(
+        "    type: job\n    source: forensics\n    outcome: completed\n    job_kind: transcode\n",
+    ));
+    assert_rejected_mentioning(
+        &with_trigger("    type: job\n    source: \"has space\"\n"),
+        "source may contain only",
+    );
+    assert_parse_error(&with_trigger("    type: job\n    outcome: maybe\n"));
+    assert_rejected_mentioning(
+        &with_trigger("    type: job\n    job_kind: \"\"\n"),
+        "job_kind may contain only",
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Conditions
 // ---------------------------------------------------------------------------
@@ -541,7 +586,7 @@ fn a_condition_fire_on_unknown_flag_defaults_to_strict() {
 // ---------------------------------------------------------------------------
 
 /// Every action type the catalogue defines.
-const ACTION_TYPES: [&str; 13] = [
+const ACTION_TYPES: [&str; 14] = [
     "control.osc",
     "control.midi",
     "control.dmx_channels",
@@ -555,11 +600,12 @@ const ACTION_TYPES: [&str; 13] = [
     "workflow.invoke_rule",
     "workflow.exec",
     "workflow.use_action",
+    "notify.webhook",
 ];
 
 #[test]
 fn every_action_type_is_accepted_by_the_parser() {
-    let valid: [(&str, &str); 13] = [
+    let valid: [(&str, &str); 14] = [
         ("control.osc", "- id: a\n  type: control.osc\n  device: d\n  address: /p/1\n"),
         (
             "control.midi",
@@ -594,6 +640,10 @@ fn every_action_type_is_accepted_by_the_parser() {
             "workflow.use_action",
             "- id: a\n  type: workflow.use_action\n  library: frag\n",
         ),
+        (
+            "notify.webhook",
+            "- id: a\n  type: notify.webhook\n  url: http://10.0.0.5:8080/hook\n  message: cue fired\n",
+        ),
     ];
     assert_eq!(
         valid.len(),
@@ -615,6 +665,30 @@ fn every_action_type_is_accepted_by_the_parser() {
         let pack = RulePack::from_yaml_str(&yaml).unwrap();
         assert_eq!(pack.rules[0].actions[0].spec.type_label(), name);
     }
+}
+
+#[test]
+fn webhook_action_boundaries() {
+    assert_rejected_mentioning(
+        &with_action(
+            "- id: a\n  type: notify.webhook\n  url: https://example.com/hook\n  message: hi\n",
+        ),
+        "https is not supported",
+    );
+    assert_rejected_mentioning(
+        &with_action("- id: a\n  type: notify.webhook\n  url: \"http://\"\n  message: hi\n"),
+        "webhook URL must be",
+    );
+    assert_rejected_mentioning(
+        &with_action("- id: a\n  type: notify.webhook\n  url: \"http://a b/\"\n  message: hi\n"),
+        "no whitespace",
+    );
+    assert_rejected_mentioning(
+        &with_action(
+            "- id: a\n  type: notify.webhook\n  url: http://10.0.0.5/\n  message: \" \"\n",
+        ),
+        "must say something",
+    );
 }
 
 #[test]

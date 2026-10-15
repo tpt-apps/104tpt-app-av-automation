@@ -128,6 +128,13 @@ pub fn describe_event(event: &Event) -> String {
         Event::Manual { rule: Some(rule) } => format!("manual run of `{rule}`"),
         Event::Manual { rule: None } => "manual".to_string(),
         Event::Api { name, .. } => format!("api {name}"),
+        Event::FileArrived { path, .. } => format!("file arrived {path}"),
+        Event::Job {
+            source,
+            job_id,
+            outcome,
+            ..
+        } => format!("{source} job {job_id} {outcome}"),
     }
 }
 
